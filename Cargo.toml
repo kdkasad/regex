@@ -1,0 +1,10 @@
+[package]
+name = "regex"
+version = "0.0.0"
+description = "A from-scratch regular expression engine"
+authors = ["Kian Kasad <kian@kasad.com>"]
+edition = "2024"
+
+[dependencies]
+
+[dev-dependencies]
