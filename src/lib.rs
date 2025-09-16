@@ -1,14 +1,28 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+#![warn(clippy::pedantic)]
+
+use crate::{
+    fsa::StateMachine,
+    parse::{Parser, PatternParseError},
+};
+
+mod fsa;
+mod parse;
+
+#[derive(Debug, Clone)]
+pub struct Regex {
+    fsa: StateMachine,
+}
+
+impl Regex {
+    /// Creates a [`Regex`] which matches the given pattern.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PatternParseError`] if there is an error parsing the pattern.
+    pub fn new(pattern: &str) -> Result<Regex, PatternParseError> {
+        Parser::new(pattern.chars()).parse()
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+mod tests {}
