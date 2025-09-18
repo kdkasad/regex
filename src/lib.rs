@@ -1,12 +1,11 @@
 #![warn(clippy::pedantic)]
 
-use crate::{
-    fsa::StateMachine,
-    parse::{Parser, PatternParseError},
-};
+use crate::{fsa::StateMachine, parse::Parser};
 
 mod fsa;
 mod parse;
+
+pub use parse::PatternParseError;
 
 #[derive(Debug, Clone)]
 pub struct Regex {

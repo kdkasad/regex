@@ -6,9 +6,15 @@ use std::ops::RangeInclusive;
 /// runtime bounds checks. Since a [`State`] can only be constructed from within this module, any
 /// consumers will only be able to hold states with valid indices, **as long as they are used in
 /// the same machine they were returned from**.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct State(usize);
+
+impl From<State> for usize {
+    fn from(value: State) -> Self {
+        value.0
+    }
+}
 
 /// Finite state automaton
 ///
@@ -70,9 +76,9 @@ impl StateMachine {
 #[derive(Debug, Copy, Clone)]
 pub struct Transition {
     /// Condition the next input character must satisfy to take this transition
-    condition: TransitionCondition,
+    pub condition: TransitionCondition,
     /// Index of the state this transition leads to
-    to: State,
+    pub to: State,
 }
 
 /// A condition that must be satisfied for a [`Transition`] to be taken.
@@ -104,5 +110,117 @@ impl From<RangeInclusive<char>> for TransitionCondition {
 impl From<char> for TransitionCondition {
     fn from(value: char) -> Self {
         TransitionCondition::InRange(value, value)
+    }
+}
+
+/// Deterministic finite automaton
+///
+/// This is a wrapper type around [`StateMachine`] that can only be constructed by converting
+/// a possibly non-deterministic [`StateMachine`] to a deterministic one using [`DFA::from()`].
+#[derive(Debug, Clone)]
+pub struct DFA(StateMachine);
+
+mod nfa2dfa {
+    use std::collections::HashSet;
+
+    use super::{DFA, State, StateMachine, TransitionCondition};
+
+    impl From<&StateMachine> for DFA {
+        /// Converts a possibly non-deterministic [`StateMachine`] into a deterministic one.
+        fn from(nfa: &StateMachine) -> DFA {
+            todo!()
+        }
+    }
+
+    /// Computes _ε-closure(`src`)_ on `nfa`, i.e. the set of states reachable from `src` by traversing
+    /// only edges with [`TransitionCondition::None`].
+    pub fn epsilon_closure(nfa: &StateMachine, src: &HashSet<State>) -> HashSet<State> {
+        let mut result: HashSet<State> = src.clone();
+        let mut stack: Vec<State> = Vec::new();
+        for s in src {
+            stack.push(*s);
+        }
+        while let Some(s) = stack.pop() {
+            let transitions_from_s = &nfa.adj_list[usize::from(s)];
+            for t in transitions_from_s {
+                if let TransitionCondition::None = t.condition {
+                    let next = t.to;
+                    result.insert(next);
+                    stack.push(next);
+                }
+            }
+        }
+        result
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::collections::HashSet;
+
+        use super::epsilon_closure;
+        use crate::fsa::{State, StateMachine, Transition, TransitionCondition};
+
+        fn set<I>(it: I) -> HashSet<State>
+        where
+            I: IntoIterator<Item = usize>,
+        {
+            it.into_iter().map(State).collect()
+        }
+
+        #[test]
+        fn test_epsilon_closure_no_op() {
+            let fsa = StateMachine {
+                adj_list: vec![vec![]],
+                start: State(0),
+                accept: State(0),
+            };
+            let actual = epsilon_closure(&fsa, &set([0]));
+            assert_eq!(set([0]), actual);
+        }
+
+        #[test]
+        fn test_epsilon_closure_single_jump() {
+            let fsa = StateMachine {
+                adj_list: vec![
+                    vec![Transition {
+                        condition: TransitionCondition::None,
+                        to: State(1),
+                    }],
+                    vec![],
+                ],
+                start: State(0),
+                accept: State(1),
+            };
+            let actual = epsilon_closure(&fsa, &set([0]));
+            assert_eq!(set([0, 1]), actual);
+        }
+
+        #[test]
+        fn test_epsilon_closure_several_jumps() {
+            let fsa = StateMachine {
+                adj_list: vec![
+                    vec![
+                        Transition {
+                            condition: TransitionCondition::None,
+                            to: State(1),
+                        },
+                        Transition {
+                            condition: TransitionCondition::None,
+                            to: State(3),
+                        },
+                    ],
+                    vec![Transition {
+                        condition: TransitionCondition::None,
+                        to: State(2),
+                    }],
+                    vec![],
+                    vec![],
+                ],
+                start: State(0),
+                accept: State(2),
+            };
+            let actual = epsilon_closure(&fsa, &set([0]));
+            assert_eq!(set([0, 1, 2, 3]), actual);
+        }
     }
 }
