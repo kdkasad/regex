@@ -61,9 +61,9 @@ impl StateMachine {
     pub fn embed(&mut self, sub: StateMachine) -> (State, State) {
         let n = self.adj_list.len();
         for mut edge_list in sub.adj_list {
-            edge_list
-                .iter_mut()
-                .for_each(|transition| transition.to.0 += n);
+            for transition in &mut edge_list {
+                transition.to.0 += n;
+            }
             self.adj_list.push(edge_list);
         }
         let start = State(sub.start.0 + n);
@@ -93,10 +93,10 @@ pub enum TransitionCondition {
 impl TransitionCondition {
     /// Returns `true` if the given condition is satisfied by the input character `c`, or `false`
     /// otherwise.
-    pub fn test(&self, c: char) -> bool {
+    pub fn test(self, c: char) -> bool {
         match self {
             TransitionCondition::None => true,
-            TransitionCondition::InRange(x, y) => *x <= c && c <= *y,
+            TransitionCondition::InRange(x, y) => x <= c && c <= y,
         }
     }
 }
@@ -118,16 +118,16 @@ impl From<char> for TransitionCondition {
 /// This is a wrapper type around [`StateMachine`] that can only be constructed by converting
 /// a possibly non-deterministic [`StateMachine`] to a deterministic one using [`DFA::from()`].
 #[derive(Debug, Clone)]
-pub struct DFA(StateMachine);
+pub struct Dfa(StateMachine);
 
 mod nfa2dfa {
     use std::collections::HashSet;
 
-    use super::{DFA, State, StateMachine, TransitionCondition};
+    use super::{Dfa, State, StateMachine, TransitionCondition};
 
-    impl From<&StateMachine> for DFA {
+    impl From<&StateMachine> for Dfa {
         /// Converts a possibly non-deterministic [`StateMachine`] into a deterministic one.
-        fn from(nfa: &StateMachine) -> DFA {
+        fn from(nfa: &StateMachine) -> Dfa {
             todo!()
         }
     }
