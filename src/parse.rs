@@ -53,7 +53,7 @@ impl<I: Iterator<Item = char>> Parser<I> {
 
         let mut fsa = StateMachine::new();
         let next = fsa.add_state();
-        fsa.link(fsa.start, next, TransitionCondition::InRange(c, c));
+        fsa.link(fsa.start, next, TransitionCondition::from(c));
         fsa.accept = next;
         Ok(fsa)
     }

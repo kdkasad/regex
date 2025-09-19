@@ -6,7 +6,7 @@ use std::ops::RangeInclusive;
 /// runtime bounds checks. Since a [`State`] can only be constructed from within this module, any
 /// consumers will only be able to hold states with valid indices, **as long as they are used in
 /// the same machine they were returned from**.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct State(usize);
 
@@ -87,13 +87,14 @@ pub enum TransitionCondition {
     /// No condition; always satisfied
     None,
     /// The next character must be between these two characters, inclusive
-    InRange(char, char),
+    InRange(u32, u32),
 }
 
 impl TransitionCondition {
     /// Returns `true` if the given condition is satisfied by the input character `c`, or `false`
     /// otherwise.
     pub fn test(self, c: char) -> bool {
+        let c = c as u32;
         match self {
             TransitionCondition::None => true,
             TransitionCondition::InRange(x, y) => x <= c && c <= y,
@@ -103,13 +104,13 @@ impl TransitionCondition {
 
 impl From<RangeInclusive<char>> for TransitionCondition {
     fn from(value: RangeInclusive<char>) -> Self {
-        TransitionCondition::InRange(*value.start(), *value.end())
+        TransitionCondition::InRange(*value.start() as u32, *value.end() as u32)
     }
 }
 
 impl From<char> for TransitionCondition {
     fn from(value: char) -> Self {
-        TransitionCondition::InRange(value, value)
+        TransitionCondition::InRange(value as u32, value as u32)
     }
 }
 
@@ -153,9 +154,115 @@ mod nfa2dfa {
         result
     }
 
+    /// Splits a list of possibly overlapping ranges into a list of disjoint ranges.
+    ///
+    /// The input is a mapping (as a list of tuples) from ranges to states. These represent
+    /// transitions that can be taken if an input character is in the given range.
+    ///
+    /// The output is a similar mapping (as a list of tuples) from ranges to sets of states.
+    /// Instead of having multiple transitions with overlapping ranges, all output transitions have
+    /// disjoint ranges, but may have multiple destination states.
+    ///
+    /// # Example
+    ///
+    /// E.g. an input might be:
+    /// ```ignore
+    /// # // test ignored because State is private
+    /// let input = vec![
+    ///     ( (10, 50), State(2) ),
+    ///     ( (20, 70), State(4) ),
+    /// ];
+    /// ```
+    /// This means there are two possible transitions, one to state 2 and one to state 4, each with
+    /// the condition that the next input character must be in the given range. However, this is
+    /// non-deterministic, since if we have a character in the range 20–50, we can take both
+    /// transitions.
+    ///
+    /// This function would produce the following output:
+    /// ```ignore
+    /// # // test ignored because State is private
+    /// # use regex::fsa::State;
+    /// # let input = vec![
+    /// #     ( (10, 50), State(2) ),
+    /// #     ( (20, 70), State(4) ),
+    /// # ];
+    /// # fn set(it: impl IntoIterator<Item = u32>) -> HashSet<u32> { it.into_iter().collect() }
+    /// let output = vec![
+    ///     ( (10, 19), set([State(2)]) ),
+    ///     ( (20, 50), set([State(2), State(4)]) ),
+    ///     ( (51, 70), set([State(4)]) ),
+    /// ];
+    /// assert_eq!(output, disjoint_transitions(&input));
+    /// ```
+    /// As we can see, the overlapping transitions in the input are transformed into
+    /// non-overlapping transitions in the output, with the proper set of possible states derived
+    /// from the overlapping transitions.
+    fn disjoint_transitions(
+        transitions: &[((u32, u32), State)],
+    ) -> Vec<((u32, u32), HashSet<State>)> {
+        #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
+        enum Event {
+            Start = 0,
+            End = 1,
+        }
+
+        // Convert ranges into a single list of start/end events
+        let mut events: Vec<(u32, Event, State)> = Vec::new();
+        for &((start, end), state) in transitions {
+            events.push((start, Event::Start, state));
+            events.push((end, Event::End, state));
+        }
+        // Sort the list so we now have all events in order
+        events.sort_unstable();
+
+        let mut result: Vec<((u32, u32), HashSet<State>)> = Vec::new();
+        let mut last_start: Option<u32> = None;
+        let mut states: HashSet<State> = HashSet::new();
+        let mut depth = 0;
+        for (pos, event, state) in events {
+            dbg!((pos, event));
+            dbg!(depth);
+            dbg!(last_start);
+            match (event, last_start) {
+                (Event::Start, None) => {
+                    last_start = Some(pos);
+                    states.insert(state);
+                    depth += 1;
+                }
+                (Event::Start, Some(start)) => {
+                    if start < pos {
+                        // Emit a range that ends right before the current position.
+                        result.push(((start, pos - 1), states.clone()));
+                    }
+                    states.insert(state);
+                    last_start = Some(pos);
+                    depth += 1;
+                }
+                (Event::End, Some(start)) => {
+                    // Since start events will come before end events for the same position, we
+                    // will only hit this branch if there is no range that starts from this
+                    // position as well.
+                    if start <= pos {
+                        // Don't end a range that hasn't started yet
+                        result.push(((start, pos), states.clone()));
+                    }
+                    states.remove(&state);
+                    depth -= 1;
+                    if depth > 0 {
+                        last_start = Some(pos + 1);
+                    } else {
+                        last_start = None;
+                    }
+                }
+                (Event::End, None) => panic!("found end with no currently-open range"),
+            }
+        }
+        result
+    }
+
     #[cfg(test)]
     mod tests {
-        use std::collections::HashSet;
+        use std::collections::{BTreeSet, HashSet};
 
         use super::epsilon_closure;
         use crate::fsa::{State, StateMachine, Transition, TransitionCondition};
@@ -221,6 +328,81 @@ mod nfa2dfa {
             };
             let actual = epsilon_closure(&fsa, &set([0]));
             assert_eq!(set([0, 1, 2, 3]), actual);
+        }
+
+        #[test]
+        fn test_disjoint_transitions() {
+            // -----
+            //    -----
+            let input = vec![((0, 5), State(0)), ((3, 10), State(1))];
+            let expected: Vec<((u32, u32), HashSet<State>)> = vec![
+                ((0, 2), set([0])),
+                ((3, 5), set([0, 1])),
+                ((6, 10), set([1])),
+            ];
+            let actual = super::disjoint_transitions(&input);
+            assert_eq!(expected, actual);
+
+            // -----
+            //     .
+            let input = vec![((0, 5), State(0)), ((5, 5), State(1))];
+            let expected: Vec<((u32, u32), HashSet<State>)> =
+                vec![((0, 4), set([0])), ((5, 5), set([0, 1]))];
+            let actual = super::disjoint_transitions(&input);
+            assert_eq!(expected, actual);
+
+            // -----
+            //   .
+            let input = vec![((0, 5), State(0)), ((3, 3), State(1))];
+            let expected: Vec<((u32, u32), HashSet<State>)> = vec![
+                ((0, 2), set([0])),
+                ((3, 3), set([0, 1])),
+                ((4, 5), set([0])),
+            ];
+            let actual = super::disjoint_transitions(&input);
+            assert_eq!(expected, actual);
+
+            // ---
+            //    ---
+            let input = vec![((0, 5), State(0)), ((5, 10), State(1))];
+            let expected: Vec<((u32, u32), HashSet<State>)> = vec![
+                ((0, 4), set([0])),
+                ((5, 5), set([0, 1])),
+                ((6, 10), set([1])),
+            ];
+            let actual = super::disjoint_transitions(&input);
+            assert_eq!(expected, actual);
+
+            // ------
+            // ---
+            let input = vec![((0, 5), State(0)), ((0, 2), State(1))];
+            let expected: Vec<((u32, u32), HashSet<State>)> =
+                vec![((0, 2), set([0, 1])), ((3, 5), set([0]))];
+            let actual = super::disjoint_transitions(&input);
+            assert_eq!(expected, actual);
+
+            // ------  ------
+            //    ---
+            let input = vec![((0, 5), State(0)), ((3, 5), State(1)), ((7, 10), State(2))];
+            let expected: Vec<((u32, u32), HashSet<State>)> = vec![
+                ((0, 2), set([0])),
+                ((3, 5), set([0, 1])),
+                ((7, 10), set([2])),
+            ];
+            let actual = super::disjoint_transitions(&input);
+            assert_eq!(expected, actual);
+
+            // ------  ------
+            //     ------
+            let input = vec![((0, 5), State(0)), ((3, 7), State(1)), ((6, 10), State(2))];
+            let expected: Vec<((u32, u32), HashSet<State>)> = vec![
+                ((0, 2), set([0])),
+                ((3, 5), set([0, 1])),
+                ((6, 7), set([1, 2])),
+                ((8, 10), set([2])),
+            ];
+            let actual = super::disjoint_transitions(&input);
+            assert_eq!(expected, actual);
         }
     }
 }
