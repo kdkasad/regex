@@ -122,21 +122,87 @@ impl From<char> for TransitionCondition {
 pub struct Dfa(StateMachine);
 
 mod nfa2dfa {
-    use std::collections::HashSet;
+    use std::{
+        collections::{BTreeSet, HashMap},
+        rc::Rc,
+    };
+
+    use crate::fsa::Transition;
 
     use super::{Dfa, State, StateMachine, TransitionCondition};
+
+    type StateSet = BTreeSet<State>;
 
     impl From<&StateMachine> for Dfa {
         /// Converts a possibly non-deterministic [`StateMachine`] into a deterministic one.
         fn from(nfa: &StateMachine) -> Dfa {
-            todo!()
+            // New automaton which will be a DFA
+            let mut dfa = StateMachine::new();
+            // Mapping from a set of states in the input NFA to a state in the output DFA
+            let mut set_to_state: HashMap<Rc<StateSet>, State> = HashMap::new();
+            // Stack of NFA state sets that have an associated state in the DFA but have not yet
+            // been connected
+            let mut stack: Vec<Rc<StateSet>> = Vec::new();
+            let mut marked_states: BTreeSet<Rc<StateSet>> = BTreeSet::new();
+
+            // Add start state set to stack
+            let start_state_set = Rc::new(epsilon_closure(nfa, &StateSet::from([nfa.start])));
+            let start_state = dfa.add_state();
+            set_to_state.insert(Rc::clone(&start_state_set), start_state);
+            stack.push(start_state_set);
+
+            // while there are states in the stack
+            while let Some(set) = stack.pop() {
+                // skip marked ones
+                if marked_states.contains(&set) {
+                    continue;
+                }
+
+                // mark this state set
+                marked_states.insert(Rc::clone(&set));
+
+                // find each outgoing transition from this state set
+                let outgoing: Vec<((u32, u32), State)> = set
+                    .iter()
+                    .copied()
+                    .flat_map(|state| nfa.adj_list[state.0].iter())
+                    .filter_map(|transition| {
+                        if let TransitionCondition::InRange(start, end) = transition.condition {
+                            Some(((start, end), transition.to))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                // make outgoing transitions disjoint
+                let disjoint = disjoint_transitions(&outgoing);
+
+                // add disjoint transitions to the DFA, pushing new states onto the stack for
+                // processing
+                let src = *set_to_state
+                    .get(&set)
+                    .expect("source state set has no DFA state mapped");
+                for (range, dst_set) in disjoint {
+                    let dst_set = Rc::new(dst_set);
+                    let dst = dfa.add_state();
+                    set_to_state.insert(Rc::clone(&dst_set), dst);
+                    dfa.adj_list[src.0].push(Transition {
+                        condition: TransitionCondition::InRange(range.0, range.1),
+                        to: dst,
+                    });
+                    stack.push(dst_set);
+                }
+            }
+
+            Dfa(dfa)
         }
     }
 
     /// Computes _ε-closure(`src`)_ on `nfa`, i.e. the set of states reachable from `src` by traversing
     /// only edges with [`TransitionCondition::None`].
-    pub fn epsilon_closure(nfa: &StateMachine, src: &HashSet<State>) -> HashSet<State> {
-        let mut result: HashSet<State> = src.clone();
+    fn epsilon_closure(nfa: &StateMachine, src: &StateSet) -> StateSet {
+        let mut result: StateSet = src.clone();
         let mut stack: Vec<State> = Vec::new();
         for s in src {
             stack.push(*s);
@@ -186,7 +252,7 @@ mod nfa2dfa {
     /// #     ( (10, 50), State(2) ),
     /// #     ( (20, 70), State(4) ),
     /// # ];
-    /// # fn set(it: impl IntoIterator<Item = u32>) -> HashSet<u32> { it.into_iter().collect() }
+    /// # fn set(it: impl IntoIterator<Item = u32>) -> BTreeSet<u32> { it.into_iter().collect() }
     /// let output = vec![
     ///     ( (10, 19), set([State(2)]) ),
     ///     ( (20, 50), set([State(2), State(4)]) ),
@@ -199,7 +265,7 @@ mod nfa2dfa {
     /// from the overlapping transitions.
     fn disjoint_transitions(
         transitions: &[((u32, u32), State)],
-    ) -> Vec<((u32, u32), HashSet<State>)> {
+    ) -> Vec<((u32, u32), BTreeSet<State>)> {
         #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
         enum Event {
             Start = 0,
@@ -215,14 +281,11 @@ mod nfa2dfa {
         // Sort the list so we now have all events in order
         events.sort_unstable();
 
-        let mut result: Vec<((u32, u32), HashSet<State>)> = Vec::new();
+        let mut result: Vec<((u32, u32), BTreeSet<State>)> = Vec::new();
         let mut last_start: Option<u32> = None;
-        let mut states: HashSet<State> = HashSet::new();
+        let mut states: BTreeSet<State> = BTreeSet::new();
         let mut depth = 0;
         for (pos, event, state) in events {
-            dbg!((pos, event));
-            dbg!(depth);
-            dbg!(last_start);
             match (event, last_start) {
                 (Event::Start, None) => {
                     last_start = Some(pos);
@@ -262,12 +325,12 @@ mod nfa2dfa {
 
     #[cfg(test)]
     mod tests {
-        use std::collections::{BTreeSet, HashSet};
+        use std::collections::BTreeSet;
 
         use super::epsilon_closure;
         use crate::fsa::{State, StateMachine, Transition, TransitionCondition};
 
-        fn set<I>(it: I) -> HashSet<State>
+        fn set<I>(it: I) -> BTreeSet<State>
         where
             I: IntoIterator<Item = usize>,
         {
@@ -335,7 +398,7 @@ mod nfa2dfa {
             // -----
             //    -----
             let input = vec![((0, 5), State(0)), ((3, 10), State(1))];
-            let expected: Vec<((u32, u32), HashSet<State>)> = vec![
+            let expected: Vec<((u32, u32), BTreeSet<State>)> = vec![
                 ((0, 2), set([0])),
                 ((3, 5), set([0, 1])),
                 ((6, 10), set([1])),
@@ -346,7 +409,7 @@ mod nfa2dfa {
             // -----
             //     .
             let input = vec![((0, 5), State(0)), ((5, 5), State(1))];
-            let expected: Vec<((u32, u32), HashSet<State>)> =
+            let expected: Vec<((u32, u32), BTreeSet<State>)> =
                 vec![((0, 4), set([0])), ((5, 5), set([0, 1]))];
             let actual = super::disjoint_transitions(&input);
             assert_eq!(expected, actual);
@@ -354,7 +417,7 @@ mod nfa2dfa {
             // -----
             //   .
             let input = vec![((0, 5), State(0)), ((3, 3), State(1))];
-            let expected: Vec<((u32, u32), HashSet<State>)> = vec![
+            let expected: Vec<((u32, u32), BTreeSet<State>)> = vec![
                 ((0, 2), set([0])),
                 ((3, 3), set([0, 1])),
                 ((4, 5), set([0])),
@@ -365,7 +428,7 @@ mod nfa2dfa {
             // ---
             //    ---
             let input = vec![((0, 5), State(0)), ((5, 10), State(1))];
-            let expected: Vec<((u32, u32), HashSet<State>)> = vec![
+            let expected: Vec<((u32, u32), BTreeSet<State>)> = vec![
                 ((0, 4), set([0])),
                 ((5, 5), set([0, 1])),
                 ((6, 10), set([1])),
@@ -376,7 +439,7 @@ mod nfa2dfa {
             // ------
             // ---
             let input = vec![((0, 5), State(0)), ((0, 2), State(1))];
-            let expected: Vec<((u32, u32), HashSet<State>)> =
+            let expected: Vec<((u32, u32), BTreeSet<State>)> =
                 vec![((0, 2), set([0, 1])), ((3, 5), set([0]))];
             let actual = super::disjoint_transitions(&input);
             assert_eq!(expected, actual);
@@ -384,7 +447,7 @@ mod nfa2dfa {
             // ------  ------
             //    ---
             let input = vec![((0, 5), State(0)), ((3, 5), State(1)), ((7, 10), State(2))];
-            let expected: Vec<((u32, u32), HashSet<State>)> = vec![
+            let expected: Vec<((u32, u32), BTreeSet<State>)> = vec![
                 ((0, 2), set([0])),
                 ((3, 5), set([0, 1])),
                 ((7, 10), set([2])),
@@ -395,7 +458,7 @@ mod nfa2dfa {
             // ------  ------
             //     ------
             let input = vec![((0, 5), State(0)), ((3, 7), State(1)), ((6, 10), State(2))];
-            let expected: Vec<((u32, u32), HashSet<State>)> = vec![
+            let expected: Vec<((u32, u32), BTreeSet<State>)> = vec![
                 ((0, 2), set([0])),
                 ((3, 5), set([0, 1])),
                 ((6, 7), set([1, 2])),
