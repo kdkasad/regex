@@ -25,6 +25,10 @@ impl<I: Iterator<Item = char>> Parser<I> {
     }
 
     /// Parses a regular expression pattern
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`PatternParseError`] if the given pattern is invalid.
     pub fn parse(mut self) -> Result<Regex, PatternParseError> {
         let fsa = self.parse_pattern()?;
         Ok(Regex { fsa })

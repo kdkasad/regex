@@ -31,15 +31,22 @@ pub struct StateMachine {
     pub accept: State,
 }
 
-impl StateMachine {
-    /// Creates a new [`StateMachine`] with one state. This one state is both the starting and
-    /// accepting state.
-    pub fn new() -> StateMachine {
+impl Default for StateMachine {
+    fn default() -> StateMachine {
         StateMachine {
             adj_list: vec![Vec::new()],
             start: State(0),
             accept: State(0),
         }
+    }
+}
+
+impl StateMachine {
+    /// Creates a new [`StateMachine`] with one state. This one state is both the starting and
+    /// accepting state.
+    #[must_use]
+    pub fn new() -> StateMachine {
+        StateMachine::default()
     }
 
     /// Adds a new unconnected state to the machine.
@@ -138,18 +145,6 @@ pub enum TransitionCondition {
     None,
     /// The next character must be between these two characters, inclusive
     InRange(u32, u32),
-}
-
-impl TransitionCondition {
-    /// Returns `true` if the given condition is satisfied by the input character `c`, or `false`
-    /// otherwise.
-    pub fn test(self, c: char) -> bool {
-        let c = c as u32;
-        match self {
-            TransitionCondition::None => true,
-            TransitionCondition::InRange(x, y) => x <= c && c <= y,
-        }
-    }
 }
 
 impl From<RangeInclusive<char>> for TransitionCondition {
