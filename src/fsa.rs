@@ -177,6 +177,8 @@ mod nfa2dfa {
         rc::Rc,
     };
 
+    use log::trace;
+
     use crate::fsa::Transition;
 
     use super::{Dfa, State, StateMachine, TransitionCondition};
@@ -197,21 +199,22 @@ mod nfa2dfa {
 
             // Add start state set to stack
             let start_state_set = Rc::new(epsilon_closure(nfa, &StateSet::from([nfa.start])));
-            let start_state = dfa.add_state();
+            let start_state = dfa.start;
             set_to_state.insert(Rc::clone(&start_state_set), start_state);
             stack.push(start_state_set);
 
             // while there are states in the stack
             while let Some(set) = stack.pop() {
+                trace!("popped {set:?}");
                 // skip marked ones
                 if marked_states.contains(&set) {
+                    trace!("skipping {set:?}");
                     continue;
                 }
-
                 // mark this state set
                 marked_states.insert(Rc::clone(&set));
 
-                // find each outgoing transition from this state set
+                // find each non-epsilon outgoing transition from this state set
                 let outgoing: Vec<((u32, u32), State)> = set
                     .iter()
                     .copied()
@@ -224,9 +227,11 @@ mod nfa2dfa {
                         }
                     })
                     .collect();
+                trace!("found outgoing transitions: {outgoing:#?}");
 
                 // make outgoing transitions disjoint
                 let disjoint = disjoint_transitions(&outgoing);
+                trace!("condensed outgoing transitions: {outgoing:#?}");
 
                 // add disjoint transitions to the DFA, pushing new states onto the stack for
                 // processing
@@ -234,17 +239,34 @@ mod nfa2dfa {
                     .get(&set)
                     .expect("source state set has no DFA state mapped");
                 for (range, dst_set) in disjoint {
-                    let dst_set = Rc::new(dst_set);
-                    let dst = dfa.add_state();
-                    set_to_state.insert(Rc::clone(&dst_set), dst);
+                    let closed = epsilon_closure(nfa, &dst_set);
+                    trace!("closed {dst_set:?} into {closed:?}");
+                    let dst_set = Rc::new(closed);
+                    // Get DFA state corresponding to dst_set if exists, or create a new one if
+                    // not.
+                    let dst = *set_to_state.entry(Rc::clone(&dst_set)).or_insert_with(|| {
+                        let new = dfa.add_state();
+                        trace!("adding mapping {dst_set:?} -> {}", new.0);
+                        new
+                    });
+                    trace!("found {dst_set:?} -> {}", dst.0);
+
+                    // Create a transition from src to dst in the DFA
                     dfa.adj_list[src.0].push(Transition {
                         condition: TransitionCondition::InRange(range.0, range.1),
                         to: dst,
                     });
+                    trace!(
+                        "adding transition {} -> {} via ({}, {})",
+                        src.0, dst.0, range.0, range.1
+                    );
+                    // Add the destination set to the stack to be processed
+                    trace!("pushing to stack: {dst_set:?}");
                     stack.push(dst_set);
                 }
             }
 
+            trace!("final set -> state mapping: {set_to_state:#?}");
             Dfa(dfa)
         }
     }

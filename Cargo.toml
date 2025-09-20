@@ -6,5 +6,6 @@ authors = ["Kian Kasad <kian@kasad.com>"]
 edition = "2024"
 
 [dependencies]
+log = "0.4.28"
 
 [dev-dependencies]
