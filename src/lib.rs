@@ -2,8 +2,8 @@
 
 use crate::{fsa::StateMachine, parse::Parser};
 
-mod fsa;
-mod parse;
+pub mod fsa;
+pub mod parse;
 
 pub use parse::PatternParseError;
 
@@ -20,6 +20,11 @@ impl Regex {
     /// Returns [`PatternParseError`] if there is an error parsing the pattern.
     pub fn new(pattern: &str) -> Result<Regex, PatternParseError> {
         Parser::new(pattern.chars()).parse()
+    }
+
+    #[must_use]
+    pub fn as_fsa(&self) -> &StateMachine {
+        &self.fsa
     }
 }
 

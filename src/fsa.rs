@@ -171,6 +171,13 @@ impl From<char> for TransitionCondition {
 #[derive(Debug, Clone)]
 pub struct Dfa(StateMachine);
 
+impl Dfa {
+    #[must_use]
+    pub fn as_fsa(&self) -> &StateMachine {
+        &self.0
+    }
+}
+
 mod nfa2dfa {
     use std::{
         collections::{BTreeSet, HashMap},
