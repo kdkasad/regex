@@ -1,4 +1,4 @@
-use std::ops::RangeInclusive;
+use std::{fmt::Write as _, ops::RangeInclusive};
 
 /// Newtype wrapper around a state index
 ///
@@ -69,6 +69,56 @@ impl StateMachine {
         let start = State(sub.start.0 + n);
         let accept = State(sub.accept.0 + n);
         (start, accept)
+    }
+
+    /// Returns a [GraphViz format][1] representation of the FSA graph.
+    ///
+    /// This operation takes `O(n + m)` time, where `n` is the number of states and `m` is the
+    /// number of transitions.
+    ///
+    /// [1]: https://www.graphviz.org/about/
+    #[must_use]
+    pub fn visualize(&self) -> String {
+        let mut s = String::new();
+        s.push_str("strict digraph FSA {\n");
+        s.push_str("graph[rankdir=LR]\n");
+        s.push_str("node[shape=circle]\n");
+        s.push_str("start_state [shape=point; style=invis]\n");
+        for i in 0..self.adj_list.len() {
+            writeln!(&mut s, "s{i}").unwrap();
+        }
+        writeln!(&mut s, "start_state -> s{}", self.start.0).unwrap();
+        for (src, transitions) in self.adj_list.iter().enumerate() {
+            for transition in transitions {
+                write!(&mut s, "s{} -> s{} [label=\"", src, transition.to.0).unwrap();
+                Self::write_graphviz_label(&mut s, &transition.condition);
+                writeln!(&mut s, "\"]").unwrap();
+            }
+        }
+        s.push('}');
+        s
+    }
+
+    /// Writes text representing the given [`TransitionCondition`] to the string, for use in the
+    /// `label` graphviz attribute.
+    fn write_graphviz_label(s: &mut String, condition: &TransitionCondition) {
+        match condition {
+            TransitionCondition::InRange(start, end) => {
+                write!(s, "{start}").unwrap();
+                if let Some(start_char) = char::from_u32(*start) {
+                    let esc = if start_char == '"' { "/" } else { "" };
+                    write!(s, " ('{esc}{start_char}')").unwrap();
+                }
+                write!(s, " - {end}").unwrap();
+                if let Some(end_char) = char::from_u32(*end) {
+                    let esc = if end_char == '"' { "/" } else { "" };
+                    write!(s, " ('{esc}{end_char}')").unwrap();
+                }
+            }
+            TransitionCondition::None => {
+                write!(s, "ε").unwrap();
+            }
+        }
     }
 }
 
