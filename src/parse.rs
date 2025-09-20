@@ -37,7 +37,7 @@ impl<I: Iterator<Item = char>> Parser<I> {
         let mut fsa = StateMachine::new();
         while self.pattern.peek().is_some() {
             // Parse atom and embed fragment
-            let sub = self.parse_pattern()?;
+            let sub = self.parse_atom()?;
             let (sub_start, sub_accept) = fsa.embed(sub);
             fsa.link(fsa.accept, sub_start, TransitionCondition::None);
             fsa.accept = sub_accept;
