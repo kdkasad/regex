@@ -92,7 +92,11 @@ impl StateMachine {
         s.push_str("node[shape=circle]\n");
         s.push_str("start_state [shape=point; style=invis]\n");
         for i in 0..self.adj_list.len() {
-            writeln!(&mut s, "s{i}").unwrap();
+            write!(&mut s, "s{i}").unwrap();
+            if self.accept.0 == i {
+                s.push_str(" [shape=doublecircle]");
+            }
+            s.push('\n');
         }
         writeln!(&mut s, "start_state -> s{}", self.start.0).unwrap();
         for (src, transitions) in self.adj_list.iter().enumerate() {
@@ -205,6 +209,9 @@ mod nfa2dfa {
             set_to_state.insert(Rc::clone(&start_state_set), start_state);
             stack.push(start_state_set);
 
+            // Create an explicit accepting state
+            dfa.accept = dfa.add_state();
+
             // while there are states in the stack
             while let Some(set) = stack.pop() {
                 trace!("popped {set:?}");
@@ -265,6 +272,19 @@ mod nfa2dfa {
                     // Add the destination set to the stack to be processed
                     trace!("pushing to stack: {dst_set:?}");
                     stack.push(dst_set);
+                }
+            }
+
+            for (set, state) in &set_to_state {
+                trace!(
+                    "adding accepting transition {} -> {}",
+                    state.0, dfa.accept.0
+                );
+                if set.contains(&nfa.accept) {
+                    dfa.adj_list[state.0].push(Transition {
+                        condition: TransitionCondition::None,
+                        to: dfa.accept,
+                    });
                 }
             }
 
