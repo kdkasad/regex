@@ -1,4 +1,4 @@
-use std::{fmt::Display, iter::Peekable};
+use std::{fmt::Display, iter::Peekable, u32};
 
 use log::debug;
 
@@ -11,7 +11,7 @@ use crate::{
 //
 // Pattern -> Atom Pattern | ε
 //
-// Atom -> char
+// Atom -> char | .
 
 pub struct Parser<I: Iterator<Item = char>> {
     pattern: Peekable<I>,
@@ -68,7 +68,11 @@ impl<I: Iterator<Item = char>> Parser<I> {
 
         let mut fsa = StateMachine::new();
         let next = fsa.add_state();
-        fsa.link(fsa.start(), next, TransitionCondition::from(c));
+        let condition = match c {
+            '.' => TransitionCondition::InRange(u32::MIN, u32::MAX),
+            c => TransitionCondition::from(c),
+        };
+        fsa.link(fsa.start(), next, condition);
         fsa.set_accepting(next, true);
         Ok(fsa)
     }

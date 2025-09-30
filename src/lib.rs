@@ -86,5 +86,10 @@ mod tests {
         literal2: "abc" = "abc",
         literal_ne1: "a" != "b",
         literal_ne2: "abc" != "cba",
+        dot1: "." = "a",
+        dot2: "." = "b",
+        dot3: "..." = "abc",
+        dot4: "..." = "def",
+        dot5: "a.b" = "a_b",
     ];
 }
