@@ -170,12 +170,16 @@ impl StateMachine {
         match condition {
             TransitionCondition::InRange(start, end) => {
                 write!(s, "{start}").unwrap();
-                if let Some(start_char) = char::from_u32(*start) {
+                if let Some(start_char) = char::from_u32(*start)
+                    && start_char.is_ascii_graphic()
+                {
                     let esc = if start_char == '"' { "/" } else { "" };
                     write!(s, " ('{esc}{start_char}')").unwrap();
                 }
                 write!(s, " - {end}").unwrap();
-                if let Some(end_char) = char::from_u32(*end) {
+                if let Some(end_char) = char::from_u32(*end)
+                    && end_char.is_ascii_graphic()
+                {
                     let esc = if end_char == '"' { "/" } else { "" };
                     write!(s, " ('{esc}{end_char}')").unwrap();
                 }
