@@ -52,4 +52,39 @@ impl Regex {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    macro_rules! gen_tests {
+        [ $($name:ident: $pattern:literal $op:tt $input:literal),+ $(,)? ] => {
+            $( gen_tests! { single; $name: $pattern $op $input } )+
+        };
+
+        (single; $name:ident: $pattern:literal = $input:literal) => {
+            ::paste::paste! {
+                #[test]
+                fn [< test_matches_ $name >]() {
+                    let regex = super::Regex::new($pattern).unwrap();
+                    assert!(regex.matches($input));
+                }
+            }
+        };
+
+        (single; $name:ident: $pattern:literal != $input:literal) => {
+            ::paste::paste! {
+                #[test]
+                fn [< test_matches_ $name >]() {
+                    let regex = super::Regex::new($pattern).unwrap();
+                    assert!(!regex.matches($input));
+                }
+            }
+        };
+    }
+
+    // <pattern> = <input> means the pattern matches the input
+    // <pattern> != <input> means the pattern does not match the input
+    gen_tests![
+        literal1: "a" = "a",
+        literal2: "abc" = "abc",
+        literal_ne1: "a" != "b",
+        literal_ne2: "abc" != "cba",
+    ];
+}
