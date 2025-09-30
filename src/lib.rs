@@ -1,6 +1,9 @@
 #![warn(clippy::pedantic)]
 
-use crate::{fsa::StateMachine, parse::Parser};
+use crate::{
+    fsa::{Dfa, StateMachine},
+    parse::Parser,
+};
 
 pub mod fsa;
 pub mod parse;
@@ -9,7 +12,7 @@ pub use parse::PatternParseError;
 
 #[derive(Debug, Clone)]
 pub struct Regex {
-    fsa: StateMachine,
+    dfa: Dfa,
 }
 
 impl Regex {
@@ -22,9 +25,29 @@ impl Regex {
         Parser::new(pattern.chars()).parse()
     }
 
+    /// Returns a reference to the [`Dfa`] representing this regular expression.
     #[must_use]
-    pub fn as_fsa(&self) -> &StateMachine {
-        &self.fsa
+    pub fn as_fsa(&self) -> &Dfa {
+        &self.dfa
+    }
+
+    #[must_use]
+    pub fn matches(&self, input: &str) -> bool {
+        let fsa = self.dfa.as_fsa();
+        let mut chars = input.chars();
+        let mut cur_state = fsa.start();
+        while let Some(c) = chars.next() {
+            if fsa.is_accepting(cur_state) {
+                return true;
+            }
+
+            let next_state = self.dfa.advance(cur_state, c);
+            match next_state {
+                Some(next_state) => cur_state = next_state,
+                None => return false,
+            }
+        }
+        fsa.is_accepting(cur_state)
     }
 }
 

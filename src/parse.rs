@@ -1,8 +1,10 @@
 use std::{fmt::Display, iter::Peekable};
 
+use log::debug;
+
 use crate::{
     Regex,
-    fsa::{StateMachine, TransitionCondition},
+    fsa::{Dfa, StateMachine, TransitionCondition},
 };
 
 // LL(1) grammar for our supported regular expressions:
@@ -31,7 +33,10 @@ impl<I: Iterator<Item = char>> Parser<I> {
     /// Returns a [`PatternParseError`] if the given pattern is invalid.
     pub fn parse(mut self) -> Result<Regex, PatternParseError> {
         let fsa = self.parse_pattern()?;
-        Ok(Regex { fsa })
+        debug!("Parsed pattern to NFA: {}", fsa.visualize());
+        Ok(Regex {
+            dfa: Dfa::from(&fsa),
+        })
     }
 
     /// Parses the `Pattern` non-terminal in the grammar.

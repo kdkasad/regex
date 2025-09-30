@@ -59,6 +59,12 @@ impl StateMachine {
         &self.accepting
     }
 
+    #[must_use]
+    #[inline]
+    pub fn is_accepting(&self, state: State) -> bool {
+        self.is_accepting[state.0]
+    }
+
     /// Marks `state` as either accepting or non-accepting, as determined by `accept`.
     #[inline]
     pub fn set_accepting(&mut self, state: State, accept: bool) {
@@ -219,10 +225,29 @@ impl From<char> for TransitionCondition {
 pub struct Dfa(StateMachine);
 
 impl Dfa {
+    /// Returns a reference to the underlying [`StateMachine`].
     #[must_use]
     #[inline]
     pub fn as_fsa(&self) -> &StateMachine {
         &self.0
+    }
+
+    #[must_use]
+    pub fn advance(&self, cur_state: State, input: char) -> Option<State> {
+        let outgoing_edges = &self.0.adj_list[cur_state.0];
+        for edge in outgoing_edges {
+            match edge.condition {
+                TransitionCondition::InRange(start, end) => {
+                    if start <= input as u32 && input as u32 <= end {
+                        return Some(edge.to);
+                    }
+                }
+                TransitionCondition::None => {
+                    unreachable!("A DFA must not have epsilon-labeled edges")
+                }
+            }
+        }
+        None
     }
 }
 
