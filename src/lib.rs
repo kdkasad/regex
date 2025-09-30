@@ -1,7 +1,7 @@
 #![warn(clippy::pedantic)]
 
 use crate::{
-    fsa::{Dfa, StateMachine},
+    fsa::Dfa,
     parse::Parser,
 };
 
@@ -91,5 +91,8 @@ mod tests {
         dot3: "..." = "abc",
         dot4: "..." = "def",
         dot5: "a.b" = "a_b",
+        group1: "(a)" = "a",
+        group2: "(a)b" = "ab",
+        group3: "(abc)(.(ef))" = "abcdef",
     ];
 }
