@@ -1,4 +1,4 @@
-use std::{fmt::Write as _, ops::RangeInclusive};
+use std::{collections::BTreeSet, fmt::Write as _, ops::RangeInclusive};
 
 /// Newtype wrapper around a state index
 ///
@@ -20,44 +20,87 @@ impl From<State> for usize {
 ///
 /// # Internal representation
 ///
-/// The state graph is represented using an adjacency list. `transitions[i]` is a list of possible
+/// The state graph is represented using an adjacency list. `adj_list[i]` is a list of possible
 /// [transitions][Transition] from state `i` to other states.
 #[derive(Debug, Clone)]
 pub struct StateMachine {
+    /// Adjacency list of state graph
     adj_list: Vec<Vec<Transition>>,
-    /// Starting state.
-    pub start: State,
-    /// Accepting state.
-    pub accept: State,
+    /// `is_accepting[i]` is `true` iff state `i` is an accepting state
+    is_accepting: Vec<bool>, // TODO: replace with bit vector
+    /// The set of accepting states, i.e. the set `U` such that `i` in `U` iff `is_accepting[i]` is
+    /// `true`.
+    accepting: BTreeSet<State>,
 }
 
 impl Default for StateMachine {
     fn default() -> StateMachine {
         StateMachine {
             adj_list: vec![Vec::new()],
-            start: State(0),
-            accept: State(0),
+            is_accepting: vec![false],
+            accepting: BTreeSet::new(),
         }
     }
 }
 
 impl StateMachine {
-    /// Creates a new [`StateMachine`] with one state. This one state is both the starting and
-    /// accepting state.
+    /// Creates a new [`StateMachine`] with one state. This one state is the starting state,
+    /// and there are no accepting states.
     #[must_use]
+    #[inline]
     pub fn new() -> StateMachine {
         StateMachine::default()
     }
 
+    /// Returns the set of accepting states.
+    #[must_use]
+    #[inline]
+    pub const fn accepting_states(&self) -> &BTreeSet<State> {
+        &self.accepting
+    }
+
+    /// Marks `state` as either accepting or non-accepting, as determined by `accept`.
+    #[inline]
+    pub fn set_accepting(&mut self, state: State, accept: bool) {
+        let old = self.is_accepting[state.0];
+        if old != accept {
+            self.is_accepting[state.0] = accept;
+            if accept {
+                self.accepting.insert(state);
+            } else {
+                self.accepting.remove(&state);
+            }
+        }
+    }
+
+    /// Clears all accepting states.
+    pub fn clear_accepting(&mut self) {
+        // Clear only the states we know are marked as accepting
+        for &State(i) in &self.accepting {
+            self.is_accepting[i] = false;
+        }
+        self.accepting.clear();
+    }
+
+    /// Returns the starting state.
+    #[must_use]
+    #[inline]
+    pub const fn start(&self) -> State {
+        State(0)
+    }
+
     /// Adds a new unconnected state to the machine.
     /// Returns the index of the new state.
+    #[inline]
     pub fn add_state(&mut self) -> State {
         let new = self.adj_list.len();
         self.adj_list.push(Vec::new());
+        self.is_accepting.push(false);
         State(new)
     }
 
     /// Links the given states by creating a [`Transition`] between them.
+    #[inline]
     pub fn link(&mut self, from: State, to: State, condition: TransitionCondition) {
         self.adj_list[from.0].push(Transition { condition, to });
     }
@@ -65,17 +108,22 @@ impl StateMachine {
     /// Embeds a given [`StateMachine`] into this state machine by copying all of its
     /// states and transitions, adjusting indices accordingly. Returns a tuple containing the
     /// states corresponding to the fragment's starting and accepting states, respectively.
-    pub fn embed(&mut self, sub: StateMachine) -> (State, State) {
+    pub fn embed(&mut self, mut sub: StateMachine) -> (State, BTreeSet<State>) {
         let n = self.adj_list.len();
-        for mut edge_list in sub.adj_list {
+        for mut edge_list in std::mem::take(&mut sub.adj_list) {
             for transition in &mut edge_list {
                 transition.to.0 += n;
             }
             self.adj_list.push(edge_list);
+            self.is_accepting.push(false);
         }
-        let start = State(sub.start.0 + n);
-        let accept = State(sub.accept.0 + n);
-        (start, accept)
+        let start = State(sub.start().0 + n);
+        let accept_set = sub
+            .accepting_states()
+            .iter()
+            .map(|state| State(state.0 + n))
+            .collect();
+        (start, accept_set)
     }
 
     /// Returns a [GraphViz format][1] representation of the FSA graph.
@@ -93,12 +141,12 @@ impl StateMachine {
         s.push_str("start_state [shape=point; style=invis]\n");
         for i in 0..self.adj_list.len() {
             write!(&mut s, "s{i}").unwrap();
-            if self.accept.0 == i {
+            if self.is_accepting[i] {
                 s.push_str(" [shape=doublecircle]");
             }
             s.push('\n');
         }
-        writeln!(&mut s, "start_state -> s{}", self.start.0).unwrap();
+        writeln!(&mut s, "start_state -> s{}", self.start().0).unwrap();
         for (src, transitions) in self.adj_list.iter().enumerate() {
             for transition in transitions {
                 write!(&mut s, "s{} -> s{} [label=\"", src, transition.to.0).unwrap();
@@ -172,6 +220,7 @@ pub struct Dfa(StateMachine);
 
 impl Dfa {
     #[must_use]
+    #[inline]
     pub fn as_fsa(&self) -> &StateMachine {
         &self.0
     }
@@ -204,13 +253,10 @@ mod nfa2dfa {
             let mut marked_states: BTreeSet<Rc<StateSet>> = BTreeSet::new();
 
             // Add start state set to stack
-            let start_state_set = Rc::new(epsilon_closure(nfa, &StateSet::from([nfa.start])));
-            let start_state = dfa.start;
+            let start_state_set = Rc::new(epsilon_closure(nfa, &StateSet::from([nfa.start()])));
+            let start_state = dfa.start();
             set_to_state.insert(Rc::clone(&start_state_set), start_state);
             stack.push(start_state_set);
-
-            // Create an explicit accepting state
-            dfa.accept = dfa.add_state();
 
             // while there are states in the stack
             while let Some(set) = stack.pop() {
@@ -275,16 +321,11 @@ mod nfa2dfa {
                 }
             }
 
+            // Mark NFA state sets which contain accepting states as accepting in the DFA
             for (set, state) in &set_to_state {
-                trace!(
-                    "adding accepting transition {} -> {}",
-                    state.0, dfa.accept.0
-                );
-                if set.contains(&nfa.accept) {
-                    dfa.adj_list[state.0].push(Transition {
-                        condition: TransitionCondition::None,
-                        to: dfa.accept,
-                    });
+                if set.iter().any(|&nfa_state| nfa.is_accepting[nfa_state.0]) {
+                    dfa.is_accepting[state.0] = true;
+                    dfa.accepting.insert(*state);
                 }
             }
 
@@ -433,11 +474,7 @@ mod nfa2dfa {
 
         #[test]
         fn test_epsilon_closure_no_op() {
-            let fsa = StateMachine {
-                adj_list: vec![vec![]],
-                start: State(0),
-                accept: State(0),
-            };
+            let fsa = StateMachine::new();
             let actual = epsilon_closure(&fsa, &set([0]));
             assert_eq!(set([0]), actual);
         }
@@ -452,8 +489,8 @@ mod nfa2dfa {
                     }],
                     vec![],
                 ],
-                start: State(0),
-                accept: State(1),
+                accepting: set([1]),
+                is_accepting: vec![false, true],
             };
             let actual = epsilon_closure(&fsa, &set([0]));
             assert_eq!(set([0, 1]), actual);
@@ -480,8 +517,8 @@ mod nfa2dfa {
                     vec![],
                     vec![],
                 ],
-                start: State(0),
-                accept: State(2),
+                accepting: set([2]),
+                is_accepting: vec![false, false, true],
             };
             let actual = epsilon_closure(&fsa, &set([0]));
             assert_eq!(set([0, 1, 2, 3]), actual);

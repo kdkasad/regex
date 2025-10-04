@@ -39,12 +39,18 @@ impl<I: Iterator<Item = char>> Parser<I> {
     /// For efficiency, recursion is replaced with iteration in this implementation.
     fn parse_pattern(&mut self) -> ParseResult {
         let mut fsa = StateMachine::new();
+        fsa.set_accepting(fsa.start(), true);
         while self.pattern.peek().is_some() {
             // Parse atom and embed fragment
             let sub = self.parse_atom()?;
             let (sub_start, sub_accept) = fsa.embed(sub);
-            fsa.link(fsa.accept, sub_start, TransitionCondition::None);
-            fsa.accept = sub_accept;
+            for &state in &fsa.accepting_states().clone() {
+                fsa.link(state, sub_start, TransitionCondition::None);
+            }
+            fsa.clear_accepting();
+            for &state in &sub_accept {
+                fsa.set_accepting(state, true);
+            }
         }
         Ok(fsa)
     }
@@ -57,8 +63,8 @@ impl<I: Iterator<Item = char>> Parser<I> {
 
         let mut fsa = StateMachine::new();
         let next = fsa.add_state();
-        fsa.link(fsa.start, next, TransitionCondition::from(c));
-        fsa.accept = next;
+        fsa.link(fsa.start(), next, TransitionCondition::from(c));
+        fsa.set_accepting(next, true);
         Ok(fsa)
     }
 }

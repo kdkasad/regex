@@ -14,7 +14,7 @@ fn main() {
     info!("this program requires the dot(1) utility to be installed.");
 
     let mut nfa = StateMachine::new();
-    let s0 = nfa.start;
+    let s0 = nfa.start();
     let s1 = nfa.add_state();
     let s2 = nfa.add_state();
     let s3 = nfa.add_state();
@@ -26,7 +26,7 @@ fn main() {
     nfa.link(s0, s2, TransitionCondition::InRange('a' as u32, 'z' as u32));
     nfa.link(s2, s3, TransitionCondition::InRange('0' as u32, '9' as u32));
     nfa.link(s3, s5, TransitionCondition::None);
-    nfa.accept = s5;
+    nfa.set_accepting(s5, true);
 
     println!("Non-deterministic:");
     if let Err(err) = render(&nfa.visualize()) {
