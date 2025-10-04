@@ -11,14 +11,18 @@ use crate::{
 //
 // Alternation -> String | String '|' Pattern
 //
-// String -> Atom | Atom String
+// String -> QuantifiedAtom | QuantifiedAtom String
+//
+// QuantifiedAtom -> Atom OptionalQuantifier
+//
+// OptionalQuantifier -> ε | '?'
 //
 // Atom -> char | '.' | Group
 //
 // Group -> '(' Pattern ')'
 //
 // char is any single character other than the following:
-// ( ) | .
+// ( ) | . ?
 
 pub struct Parser<I: Iterator<Item = char>> {
     pattern: Peekable<I>,
@@ -95,10 +99,10 @@ impl<I: Iterator<Item = char>> Parser<I> {
     ///
     /// Replaces recursion with iteration.
     fn parse_string(&mut self) -> OptionalParseResult {
-        let Some(mut fsa) = self.parse_atom()? else {
+        let Some(mut fsa) = self.parse_quantified_atom()? else {
             return Ok(None);
         };
-        while let Some(next) = self.parse_atom()? {
+        while let Some(next) = self.parse_quantified_atom()? {
             let (next_start, next_accept) = fsa.embed(next);
             for state in fsa.accepting_states().clone() {
                 fsa.link(state, next_start, TransitionCondition::None);
@@ -111,13 +115,31 @@ impl<I: Iterator<Item = char>> Parser<I> {
         Ok(Some(fsa))
     }
 
+    /// Parses the `QuantifiedAtom` non-terminal in the grammar.
+    fn parse_quantified_atom(&mut self) -> OptionalParseResult {
+        let Some(mut atom) = self.parse_atom()? else {
+            return Ok(None);
+        };
+
+        match self.pattern.peek() {
+            None => (),
+            Some('?') => {
+                self.pattern.next().unwrap();
+                atom.set_accepting(atom.start(), true);
+            }
+            _ => (),
+        }
+
+        Ok(Some(atom))
+    }
+
     /// Parses the `Atom` non-terminal in the grammar.
     fn parse_atom(&mut self) -> OptionalParseResult {
         let c = match self.pattern.peek() {
             // End of input
             None => return Ok(None),
             // Special characters that don't start an atom
-            Some('|' | ')') => return Ok(None),
+            Some('|' | ')' | '?') => return Ok(None),
             Some(c) => *c,
         };
 

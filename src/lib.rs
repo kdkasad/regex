@@ -98,5 +98,10 @@ mod tests {
         or5: "ab|cd" != "acd",
         or_group1: "a|(cd)" = "a",
         or_group2: "a|(cd)" = "cd",
+        optional1: "a?" = "",
+        optional2: "a?" = "a",
+        optional3: "a(bc|yz)?" = "abc",
+        optional4: "a(bc|yz)?def" = "adef",
+        optional5: "a(bc|yz)?def" = "ayzdef",
     ];
 }
