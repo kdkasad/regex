@@ -1,9 +1,6 @@
 #![warn(clippy::pedantic)]
 
-use crate::{
-    fsa::Dfa,
-    parse::Parser,
-};
+use crate::{fsa::Dfa, parse::Parser};
 
 pub mod fsa;
 pub mod parse;
@@ -63,7 +60,7 @@ mod tests {
                 #[test]
                 fn [< test_matches_ $name >]() {
                     let regex = super::Regex::new($pattern).unwrap();
-                    assert!(regex.matches($input));
+                    assert!(regex.matches($input), "Expected pattern '{}' to match input '{}'", $pattern, $input);
                 }
             }
         };
@@ -73,7 +70,7 @@ mod tests {
                 #[test]
                 fn [< test_matches_ $name >]() {
                     let regex = super::Regex::new($pattern).unwrap();
-                    assert!(!regex.matches($input));
+                    assert!(!regex.matches($input), "Expected pattern '{}' to not match input '{}'", $pattern, $input);
                 }
             }
         };
@@ -94,5 +91,12 @@ mod tests {
         group1: "(a)" = "a",
         group2: "(a)b" = "ab",
         group3: "(abc)(.(ef))" = "abcdef",
+        or1: "a|b" = "a",
+        or2: "a|b" = "b",
+        or3: "a|b" != "c",
+        or4: "ab|cd" = "ab",
+        or5: "ab|cd" != "acd",
+        or_group1: "a|(cd)" = "a",
+        or_group2: "a|(cd)" = "cd",
     ];
 }
