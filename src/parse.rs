@@ -1,7 +1,5 @@
 use std::{error::Error, fmt::Display, iter::Peekable, u32};
 
-use log::debug;
-
 use crate::{
     Regex,
     fsa::{Dfa, StateMachine, TransitionCondition},
@@ -43,7 +41,6 @@ impl<I: Iterator<Item = char>> Parser<I> {
     /// Returns a [`PatternParseError`] if the given pattern is invalid.
     pub fn parse(mut self) -> Result<Regex, PatternParseError> {
         let fsa = self.parse_pattern()?;
-        debug!("Parsed pattern to NFA: {}", fsa.visualize());
         Ok(Regex {
             dfa: Dfa::from(&fsa),
         })

@@ -139,9 +139,12 @@ impl StateMachine {
     ///
     /// [1]: https://www.graphviz.org/about/
     #[must_use]
-    pub fn visualize(&self) -> String {
+    pub fn visualize<'a>(&self, title: impl Into<Option<&'a str>>) -> String {
         let mut s = String::new();
         s.push_str("strict digraph FSA {\n");
+        if let Some(title) = title.into() {
+            writeln!(&mut s, "label=\"{}\"", title).unwrap();
+        }
         s.push_str("graph[rankdir=LR]\n");
         s.push_str("node[shape=circle]\n");
         s.push_str("start_state [shape=point; style=invis]\n");

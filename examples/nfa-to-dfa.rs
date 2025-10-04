@@ -1,17 +1,8 @@
-use std::{
-    io::Write,
-    process::{Command, Stdio},
-};
-
 use env_logger::Env;
-use log::{error, info};
 use regex::fsa::{Dfa, StateMachine, TransitionCondition};
 
 fn main() {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
-
-    info!("this program requires your terminal to support the Kitty graphics protocol.");
-    info!("this program requires the dot(1) utility to be installed.");
 
     let mut nfa = StateMachine::new();
     let s0 = nfa.start();
@@ -28,25 +19,8 @@ fn main() {
     nfa.link(s3, s5, TransitionCondition::None);
     nfa.set_accepting(s5, true);
 
-    println!("Non-deterministic:");
-    if let Err(err) = render(&nfa.visualize()) {
-        error!("running dot(1) command: {err}");
-    }
-    println!("Deterministic:");
     let dfa = Dfa::from(&nfa);
-    if let Err(err) = render(&dfa.as_fsa().visualize()) {
-        error!("running dot(1) command: {err}");
-    }
-}
 
-/// Renders a GraphViz graph to the terminal using Kitty graphics protocol
-fn render(gv: &str) -> std::io::Result<()> {
-    let mut proc = Command::new("dot")
-        .arg("-Gdpi=200")
-        .arg("-Tkittyz")
-        .stdin(Stdio::piped())
-        .spawn()?;
-    proc.stdin.as_mut().unwrap().write_all(gv.as_bytes())?;
-    proc.wait()?;
-    Ok(())
+    println!("{}", nfa.visualize("Non-deterministic"));
+    println!("{}", dfa.as_fsa().visualize("Deterministic"));
 }
