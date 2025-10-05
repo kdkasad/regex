@@ -2,6 +2,7 @@
 name = "regex"
 version = "0.0.0"
 description = "A from-scratch regular expression engine"
+repository = "https://github.com/kdkasad/regex"
 authors = ["Kian Kasad <kian@kasad.com>"]
 edition = "2024"
 
