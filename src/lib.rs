@@ -103,5 +103,17 @@ mod tests {
         optional3: "a(bc|yz)?" = "abc",
         optional4: "a(bc|yz)?def" = "adef",
         optional5: "a(bc|yz)?def" = "ayzdef",
+        kleene1: "ab*c" = "ac",
+        kleene2: "ab*c" = "abc",
+        kleene3: "ab*c" = "abbbbbbbc",
+        kleene4: "ab*c" != "bbbbbbc",
+        plus1: "ab+c" != "ac",
+        plus2: "ab+c" = "abc",
+        plus3: "ab+c" = "abbbbbbbc",
+        plus4: "ab+c" != "bbbbbbc",
+        kleene_group1: "a(xyz)*c" = "axyzxyzc",
+        kleene_group2: "a(xyz)*c" = "ac",
+        plus_group1: "a(xyz)+c" = "axyzxyzc",
+        plus_group2: "a(xyz)+c" != "ac",
     ];
 }

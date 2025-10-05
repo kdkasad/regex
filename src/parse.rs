@@ -15,14 +15,14 @@ use crate::{
 //
 // QuantifiedAtom -> Atom OptionalQuantifier
 //
-// OptionalQuantifier -> ε | '?'
+// OptionalQuantifier -> ε | '?' | '*' | '+'
 //
 // Atom -> char | '.' | Group
 //
 // Group -> '(' Pattern ')'
 //
 // char is any single character other than the following:
-// ( ) | . ?
+// ( ) | . ? * +
 
 pub struct Parser<I: Iterator<Item = char>> {
     pattern: Peekable<I>,
@@ -126,6 +126,22 @@ impl<I: Iterator<Item = char>> Parser<I> {
             Some('?') => {
                 self.pattern.next().unwrap();
                 atom.set_accepting(atom.start(), true);
+            }
+            Some('*') => {
+                self.pattern.next().unwrap();
+                // Edge from end to start to allow repetition
+                for state in atom.accepting_states().clone() {
+                    atom.link(state, atom.start(), TransitionCondition::None);
+                }
+                // Accept start state to allow empty string
+                atom.set_accepting(atom.start(), true);
+            }
+            Some('+') => {
+                self.pattern.next().unwrap();
+                // Edge from end to start to allow repetition
+                for state in atom.accepting_states().clone() {
+                    atom.link(state, atom.start(), TransitionCondition::None);
+                }
             }
             _ => (),
         }

@@ -21,8 +21,8 @@ And the following are goals I have for my implementation:
     - [ ] `[]` - character sets
     - [x] `|` - alternation
     - [x] `?` - zero or one
-    - [ ] `*` - zero or more
-    - [ ] `+` - one or more
+    - [x] `*` - zero or more
+    - [x] `+` - one or more
     - [ ] `^` - start of string
     - [ ] `$` - end of string
 - [x] Output the finite state machines in [GraphViz DOT format][gvdot] for
@@ -41,6 +41,9 @@ created transitions for ranges, and broke these ranges into several disjoint
 ranges as part of the NFA-to-DFA conversion.
 
 ## Screenshots
+
+Deterministic finite state machine (DFA) generated for the regular expression pattern `a(x|y)*c`:
+![a(x|y)*c](./docs/a(x|y)*c.svg)
 
 Conversion of a non-deterministic finite state machine (NFA) to a deterministic
 one (DFA):
