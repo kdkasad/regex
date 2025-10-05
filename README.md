@@ -1,6 +1,6 @@
-# Regular expression engine
+# Regular expressions from scratch
 
-This project is my own re-implementation of a regular expression engine.
+This project is my own implementation of a regular expression engine.
 It's built from scratch, using only [theory as reference](#references).
 
 ## Goals
@@ -27,6 +27,7 @@ And the following are goals I have for my implementation:
     - [ ] `$` - end of string
 - [x] Output the finite state machines in [GraphViz DOT format][gvdot] for
       visualization (see [Screenshots](#screenshots))
+- [ ] Track the matched text rather than pass/fail boolean
 
 [gvdot]: https://graphviz.org/doc/info/lang.html
 
