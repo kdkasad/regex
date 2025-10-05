@@ -115,5 +115,7 @@ mod tests {
         kleene_group2: "a(xyz)*c" = "ac",
         plus_group1: "a(xyz)+c" = "axyzxyzc",
         plus_group2: "a(xyz)+c" != "ac",
+        emoji1: "(😄|😁)+" = "😁😁😄😁",
+        emoji2: "(😄|😁)+" != "😢",
     ];
 }
