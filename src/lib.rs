@@ -34,12 +34,7 @@ impl Regex {
         let mut chars = input.chars();
         let mut cur_state = fsa.start();
         while let Some(c) = chars.next() {
-            if fsa.is_accepting(cur_state) {
-                return true;
-            }
-
-            let next_state = self.dfa.advance(cur_state, c);
-            match next_state {
+            match self.dfa.advance(cur_state, c) {
                 Some(next_state) => cur_state = next_state,
                 None => return false,
             }
@@ -123,5 +118,6 @@ mod tests {
         charset4: "_[abc]+_" != "_abcbcabcbazbacbabc_",
         charset5: "_[a-z]+_" = "_aklkdsafmacisurlskc_",
         charset6: "_[a-z]+_" != "_aklkds0fmacisurlskc_",
+        whole_string: "abc" != "xabcy",
     ];
 }

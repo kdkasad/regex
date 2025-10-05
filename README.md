@@ -23,11 +23,9 @@ And the following are goals I have for my implementation:
     - [x] `?` - zero or one
     - [x] `*` - zero or more
     - [x] `+` - one or more
-    - [ ] `^` - start of string
-    - [ ] `$` - end of string
 - [x] Output the finite state machines in [GraphViz DOT format][gvdot] for
       visualization (see [Screenshots](#screenshots))
-- [ ] Track the matched text rather than pass/fail boolean
+- [ ] Track the text matched by capture groups
 
 [gvdot]: https://graphviz.org/doc/info/lang.html
 
