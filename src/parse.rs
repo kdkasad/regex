@@ -1,3 +1,5 @@
+//! Parses regular expressions into NFAs
+
 use std::{error::Error, fmt::Display, iter::Peekable, u32};
 
 use crate::{
@@ -17,12 +19,22 @@ use crate::{
 //
 // OptionalQuantifier -> ε | '?' | '*' | '+'
 //
-// Atom -> char | '.' | Group
+// Atom -> rchar | '.' | Group | CharacterSet
 //
 // Group -> '(' Pattern ')'
 //
-// char is any single character other than the following:
+// CharacterSet -> '[' CharacterSetMemberList ']'
+//
+// CharacterSetMemberList -> CharacterSetMember
+//                         | CharacterSetMember CharacterSetMemberList
+//
+// CharacterSetMember -> schar | schar '-' schar
+//
+// rchar is any single character other than the following:
 // ( ) | . ? * +
+//
+// schar is any single character other than the following:
+// - ]
 
 pub struct Parser<I: Iterator<Item = char>> {
     pattern: Peekable<I>,
@@ -164,6 +176,11 @@ impl<I: Iterator<Item = char>> Parser<I> {
             return Ok(Some(group));
         }
 
+        // Attempt to parse a character set
+        if let Some(charset) = self.parse_character_set()? {
+            return Ok(Some(charset));
+        }
+
         // Parse a literal character or wildcard
         self.pattern.next().unwrap(); // consume peeked character
         let mut fsa = StateMachine::new();
@@ -189,9 +206,63 @@ impl<I: Iterator<Item = char>> Parser<I> {
         };
         Ok(Some(fsa))
     }
+
+    /// Parses the `CharacterSet` non-terminal in the grammar, as well as
+    /// `CharacterSetMemberList`.
+    fn parse_character_set(&mut self) -> OptionalParseResult {
+        if self.pattern.peek().copied() != Some('[') {
+            return Ok(None);
+        }
+        self.pattern.next(); // consume '['
+        let mut ranges: Vec<(u32, u32)> = Vec::new();
+        while let Some(range) = self.parse_character_set_member()? {
+            ranges.push(range);
+        }
+        // Consume ']'
+        let next = self.pattern.next();
+        if ranges.is_empty() {
+            return Err(PatternParseError::ExpectedButFound(None, next));
+        } else if next != Some(']') {
+            return Err(PatternParseError::ExpectedButFound(Some(']'), next));
+        }
+
+        // Build FSA fragment
+        let mut fsa = StateMachine::new();
+        let next = fsa.add_state();
+        fsa.set_accepting(next, true);
+        for (start, end) in ranges {
+            fsa.link(fsa.start(), next, TransitionCondition::InRange(start, end));
+        }
+        Ok(Some(fsa))
+    }
+
+    /// Parses the `CharacterSetMember` non-terminal in the grammar.
+    ///
+    /// Returns a tuple consisting of the start and end of the character range represented by this member.
+    fn parse_character_set_member(&mut self) -> Result<Option<(u32, u32)>, PatternParseError> {
+        if let None | Some(']') = self.pattern.peek().copied() {
+            return Ok(None);
+        }
+        let start = self.pattern.next().unwrap();
+        if start == '-' {
+            return Err(PatternParseError::ExpectedButFound(None, Some('-')));
+        }
+        if let Some('-') = self.pattern.peek().copied() {
+            self.pattern.next(); // consume '-'
+            let Some(end) = self.pattern.next() else {
+                return Err(PatternParseError::ExpectedButFound(None, None));
+            };
+            if end == '-' {
+                return Err(PatternParseError::ExpectedButFound(None, Some('-')));
+            }
+            Ok(Some((start as u32, end as u32)))
+        } else {
+            Ok(Some((start as u32, start as u32)))
+        }
+    }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PatternParseError {
     /// Expected a character but found either EOF or a different character.
     ///
@@ -220,3 +291,47 @@ impl Display for PatternParseError {
 }
 
 impl Error for PatternParseError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn character_set_member_single() {
+        let input = "abc";
+        let mut parser = Parser::new(input.chars());
+        assert_eq!(
+            Ok(Some(('a' as u32, 'a' as u32))),
+            parser.parse_character_set_member(),
+        );
+    }
+
+    #[test]
+    fn character_set_member_range() {
+        let input = "a-z";
+        let mut parser = Parser::new(input.chars());
+        assert_eq!(
+            Ok(Some(('a' as u32, 'z' as u32))),
+            parser.parse_character_set_member(),
+        );
+    }
+
+    #[test]
+    fn character_set_member_error_leading_hyphen() {
+        let input = "-";
+        let mut parser = Parser::new(input.chars());
+        assert_eq!(
+            Err(PatternParseError::ExpectedButFound(None, Some('-'))),
+            parser.parse_character_set_member(),
+        );
+    }
+    #[test]
+    fn character_set_member_error_trailing_hyphen() {
+        let input = "a-";
+        let mut parser = Parser::new(input.chars());
+        assert_eq!(
+            Err(PatternParseError::ExpectedButFound(None, None)),
+            parser.parse_character_set_member(),
+        );
+    }
+}

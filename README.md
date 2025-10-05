@@ -18,7 +18,7 @@ And the following are goals I have for my implementation:
 - [x] Handle Unicode, not just ASCII[^unicode]
 - [ ] Handle the following regex operators:
     - [x] `()` - grouping
-    - [ ] `[]` - character sets
+    - [x] `[]` - character sets
     - [x] `|` - alternation
     - [x] `?` - zero or one
     - [x] `*` - zero or more

@@ -117,5 +117,11 @@ mod tests {
         plus_group2: "a(xyz)+c" != "ac",
         emoji1: "(😄|😁)+" = "😁😁😄😁",
         emoji2: "(😄|😁)+" != "😢",
+        charset1: "[a]" = "a",
+        charset2: "[abc]" = "b",
+        charset3: "_[abc]+_" = "_abcbcabcbacbacbabc_",
+        charset4: "_[abc]+_" != "_abcbcabcbazbacbabc_",
+        charset5: "_[a-z]+_" = "_aklkdsafmacisurlskc_",
+        charset6: "_[a-z]+_" != "_aklkds0fmacisurlskc_",
     ];
 }
