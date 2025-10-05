@@ -1,21 +1,5 @@
 use std::{fmt::Write as _, ops::RangeInclusive};
 
-/// Newtype wrapper around a state index
-///
-/// Used to guarantee validity of states used as inputs to functions without having to perform
-/// runtime bounds checks. Since a [`State`] can only be constructed from within this module, any
-/// consumers will only be able to hold states with valid indices, **as long as they are used in
-/// the same machine they were returned from**.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct State(usize);
-
-impl From<State> for usize {
-    fn from(value: State) -> Self {
-        value.0
-    }
-}
-
 /// Finite state automaton
 ///
 /// # Internal representation
@@ -52,26 +36,37 @@ impl StateMachine {
     ///
     /// This is a slow operation, as it requires iterating over all states.
     #[must_use]
-    pub fn accepting_states(&self) -> Vec<State> {
+    pub fn accepting_states(&self) -> Vec<usize> {
         self.is_accepting
             .iter()
             .copied()
             .enumerate()
             .filter(|&(_, accepting)| accepting)
-            .map(|(i, _)| State(i))
+            .map(|(i, _)| i)
             .collect()
     }
 
+    /// Returns whether `state` is an accepting state.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `state` is out of bounds.
     #[must_use]
     #[inline]
-    pub fn is_accepting(&self, state: State) -> bool {
-        self.is_accepting[state.0]
+    pub fn is_accepting(&self, state: usize) -> bool {
+        assert!(state < self.is_accepting.len(), "state is out of bounds");
+        self.is_accepting[state]
     }
 
     /// Marks `state` as either accepting or non-accepting, as determined by `accept`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `state` is out of bounds.
     #[inline]
-    pub fn set_accepting(&mut self, state: State, accept: bool) {
-        self.is_accepting[state.0] = accept;
+    pub fn set_accepting(&mut self, state: usize, accept: bool) {
+        assert!(state < self.is_accepting.len(), "state is out of bounds");
+        self.is_accepting[state] = accept;
     }
 
     /// Clears all accepting states.
@@ -86,42 +81,48 @@ impl StateMachine {
     /// Returns the starting state.
     #[must_use]
     #[inline]
-    pub const fn start(&self) -> State {
-        State(0)
+    pub const fn start(&self) -> usize {
+        0
     }
 
     /// Adds a new unconnected state to the machine.
     /// Returns the index of the new state.
     #[inline]
-    pub fn add_state(&mut self) -> State {
+    pub fn add_state(&mut self) -> usize {
         let new = self.adj_list.len();
         self.adj_list.push(Vec::new());
         self.is_accepting.push(false);
-        State(new)
+        new
     }
 
     /// Links the given states by creating a [`Transition`] between them.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either `from` or `to` is out of bounds.
     #[inline]
-    pub fn link(&mut self, from: State, to: State, condition: TransitionCondition) {
-        self.adj_list[from.0].push(Transition { condition, to });
+    pub fn link(&mut self, from: usize, to: usize, condition: TransitionCondition) {
+        assert!(from < self.adj_list.len(), "from index is out of bounds");
+        assert!(to < self.adj_list.len(), "to index is out of bounds");
+        self.adj_list[from].push(Transition { condition, to });
     }
 
     /// Embeds a given [`StateMachine`] into this state machine by copying all of its
     /// states and transitions, adjusting indices accordingly. Returns a tuple containing the
     /// states corresponding to the fragment's starting and accepting states, respectively.
-    pub fn embed(&mut self, mut sub: StateMachine) -> (State, Vec<State>) {
+    pub fn embed(&mut self, mut sub: StateMachine) -> (usize, Vec<usize>) {
         let n = self.adj_list.len();
         for mut edge_list in std::mem::take(&mut sub.adj_list) {
             for transition in &mut edge_list {
-                transition.to.0 += n;
+                transition.to += n;
             }
             self.adj_list.push(edge_list);
             self.is_accepting.push(false);
         }
-        let start = State(sub.start().0 + n);
+        let start = sub.start() + n;
         let mut accept_set = sub.accepting_states();
         for state in &mut accept_set {
-            state.0 += n;
+            *state += n;
         }
         (start, accept_set)
     }
@@ -149,10 +150,10 @@ impl StateMachine {
             }
             s.push('\n');
         }
-        writeln!(&mut s, "start_state -> s{}", self.start().0).unwrap();
+        writeln!(&mut s, "start_state -> s{}", self.start()).unwrap();
         for (src, transitions) in self.adj_list.iter().enumerate() {
             for transition in transitions {
-                write!(&mut s, "s{} -> s{} [label=\"", src, transition.to.0).unwrap();
+                write!(&mut s, "s{} -> s{} [label=\"", src, transition.to).unwrap();
                 Self::write_graphviz_label(&mut s, &transition.condition);
                 writeln!(&mut s, "\"]").unwrap();
             }
@@ -194,7 +195,7 @@ pub struct Transition {
     /// Condition the next input character must satisfy to take this transition
     pub condition: TransitionCondition,
     /// Index of the state this transition leads to
-    pub to: State,
+    pub to: usize,
 }
 
 /// A condition that must be satisfied for a [`Transition`] to be taken.
@@ -233,9 +234,20 @@ impl Dfa {
         &self.0
     }
 
+    /// Returns the next state determined by transitioning from `cur_state` with
+    /// input character `input`. Returns `None` if there is no valid transition
+    /// for the given input.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `cur_state` is out of bounds.
     #[must_use]
-    pub fn advance(&self, cur_state: State, input: char) -> Option<State> {
-        let outgoing_edges = &self.0.adj_list[cur_state.0];
+    pub fn advance(&self, cur_state: usize, input: char) -> Option<usize> {
+        assert!(
+            cur_state < self.0.adj_list.len(),
+            "cur_state is out of bounds"
+        );
+        let outgoing_edges = &self.0.adj_list[cur_state];
         for edge in outgoing_edges {
             match edge.condition {
                 TransitionCondition::InRange(start, end) => {
@@ -262,9 +274,9 @@ mod nfa2dfa {
 
     use crate::fsa::Transition;
 
-    use super::{Dfa, State, StateMachine, TransitionCondition};
+    use super::{Dfa, StateMachine, TransitionCondition};
 
-    type StateSet = BTreeSet<State>;
+    type StateSet = BTreeSet<usize>;
 
     impl From<&StateMachine> for Dfa {
         /// Converts a possibly non-deterministic [`StateMachine`] into a deterministic one.
@@ -272,7 +284,7 @@ mod nfa2dfa {
             // New automaton which will be a DFA
             let mut dfa = StateMachine::new();
             // Mapping from a set of states in the input NFA to a state in the output DFA
-            let mut set_to_state: HashMap<Rc<StateSet>, State> = HashMap::new();
+            let mut set_to_state: HashMap<Rc<StateSet>, usize> = HashMap::new();
             // Stack of NFA state sets that have an associated state in the DFA but have not yet
             // been connected
             let mut stack: Vec<Rc<StateSet>> = Vec::new();
@@ -296,10 +308,10 @@ mod nfa2dfa {
                 marked_states.insert(Rc::clone(&set));
 
                 // find each non-epsilon outgoing transition from this state set
-                let outgoing: Vec<((u32, u32), State)> = set
+                let outgoing: Vec<((u32, u32), usize)> = set
                     .iter()
                     .copied()
-                    .flat_map(|state| nfa.adj_list[state.0].iter())
+                    .flat_map(|state| nfa.adj_list[state].iter())
                     .filter_map(|transition| {
                         if let TransitionCondition::InRange(start, end) = transition.condition {
                             Some(((start, end), transition.to))
@@ -327,19 +339,19 @@ mod nfa2dfa {
                     // not.
                     let dst = *set_to_state.entry(Rc::clone(&dst_set)).or_insert_with(|| {
                         let new = dfa.add_state();
-                        trace!("adding mapping {dst_set:?} -> {}", new.0);
+                        trace!("adding mapping {dst_set:?} -> {new}");
                         new
                     });
-                    trace!("found {dst_set:?} -> {}", dst.0);
+                    trace!("found {dst_set:?} -> {dst}");
 
                     // Create a transition from src to dst in the DFA
-                    dfa.adj_list[src.0].push(Transition {
+                    dfa.adj_list[src].push(Transition {
                         condition: TransitionCondition::InRange(range.0, range.1),
                         to: dst,
                     });
                     trace!(
                         "adding transition {} -> {} via ({}, {})",
-                        src.0, dst.0, range.0, range.1
+                        src, dst, range.0, range.1
                     );
                     // Add the destination set to the stack to be processed
                     trace!("pushing to stack: {dst_set:?}");
@@ -348,9 +360,9 @@ mod nfa2dfa {
             }
 
             // Mark NFA state sets which contain accepting states as accepting in the DFA
-            for (set, state) in &set_to_state {
-                if set.iter().any(|&nfa_state| nfa.is_accepting[nfa_state.0]) {
-                    dfa.is_accepting[state.0] = true;
+            for (set, &state) in &set_to_state {
+                if set.iter().any(|&nfa_state| nfa.is_accepting[nfa_state]) {
+                    dfa.is_accepting[state] = true;
                 }
             }
 
@@ -361,14 +373,18 @@ mod nfa2dfa {
 
     /// Computes _ε-closure(`src`)_ on `nfa`, i.e. the set of states reachable from `src` by traversing
     /// only edges with [`TransitionCondition::None`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of the states in `src` are out of bounds.
     fn epsilon_closure(nfa: &StateMachine, src: &StateSet) -> StateSet {
         let mut result: StateSet = src.clone();
-        let mut stack: Vec<State> = Vec::new();
+        let mut stack: Vec<usize> = Vec::new();
         for s in src {
             stack.push(*s);
         }
         while let Some(s) = stack.pop() {
-            let transitions_from_s = &nfa.adj_list[usize::from(s)];
+            let transitions_from_s = &nfa.adj_list[s];
             for t in transitions_from_s {
                 if let TransitionCondition::None = t.condition {
                     let next = t.to;
@@ -395,8 +411,8 @@ mod nfa2dfa {
     /// ```ignore
     /// # // test ignored because State is private
     /// let input = vec![
-    ///     ( (10, 50), State(2) ),
-    ///     ( (20, 70), State(4) ),
+    ///     ( (10, 50), 2 ),
+    ///     ( (20, 70), 4 ),
     /// ];
     /// ```
     /// This means there are two possible transitions, one to state 2 and one to state 4, each with
@@ -409,14 +425,14 @@ mod nfa2dfa {
     /// # // test ignored because State is private
     /// # use regex::fsa::State;
     /// # let input = vec![
-    /// #     ( (10, 50), State(2) ),
-    /// #     ( (20, 70), State(4) ),
+    /// #     ( (10, 50), 2 ),
+    /// #     ( (20, 70), 4 ),
     /// # ];
     /// # fn set(it: impl IntoIterator<Item = u32>) -> BTreeSet<u32> { it.into_iter().collect() }
     /// let output = vec![
-    ///     ( (10, 19), set([State(2)]) ),
-    ///     ( (20, 50), set([State(2), State(4)]) ),
-    ///     ( (51, 70), set([State(4)]) ),
+    ///     ( (10, 19), set([2]) ),
+    ///     ( (20, 50), set([2, 4]) ),
+    ///     ( (51, 70), set([4]) ),
     /// ];
     /// assert_eq!(output, disjoint_transitions(&input));
     /// ```
@@ -424,8 +440,8 @@ mod nfa2dfa {
     /// non-overlapping transitions in the output, with the proper set of possible states derived
     /// from the overlapping transitions.
     fn disjoint_transitions(
-        transitions: &[((u32, u32), State)],
-    ) -> Vec<((u32, u32), BTreeSet<State>)> {
+        transitions: &[((u32, u32), usize)],
+    ) -> Vec<((u32, u32), BTreeSet<usize>)> {
         #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
         enum Event {
             Start = 0,
@@ -433,7 +449,7 @@ mod nfa2dfa {
         }
 
         // Convert ranges into a single list of start/end events
-        let mut events: Vec<(u32, Event, State)> = Vec::new();
+        let mut events: Vec<(u32, Event, usize)> = Vec::new();
         for &((start, end), state) in transitions {
             events.push((start, Event::Start, state));
             events.push((end, Event::End, state));
@@ -441,9 +457,9 @@ mod nfa2dfa {
         // Sort the list so we now have all events in order
         events.sort_unstable();
 
-        let mut result: Vec<((u32, u32), BTreeSet<State>)> = Vec::new();
+        let mut result: Vec<((u32, u32), BTreeSet<usize>)> = Vec::new();
         let mut last_start: Option<u32> = None;
-        let mut states: BTreeSet<State> = BTreeSet::new();
+        let mut states: BTreeSet<usize> = BTreeSet::new();
         let mut depth = 0;
         for (pos, event, state) in events {
             match (event, last_start) {
@@ -488,13 +504,13 @@ mod nfa2dfa {
         use std::collections::BTreeSet;
 
         use super::epsilon_closure;
-        use crate::fsa::{State, StateMachine, Transition, TransitionCondition};
+        use crate::fsa::{StateMachine, Transition, TransitionCondition};
 
-        fn set<I>(it: I) -> BTreeSet<State>
+        fn set<I>(it: I) -> BTreeSet<usize>
         where
             I: IntoIterator<Item = usize>,
         {
-            it.into_iter().map(State).collect()
+            BTreeSet::from_iter(it)
         }
 
         #[test]
@@ -510,7 +526,7 @@ mod nfa2dfa {
                 adj_list: vec![
                     vec![Transition {
                         condition: TransitionCondition::None,
-                        to: State(1),
+                        to: 1,
                     }],
                     vec![],
                 ],
@@ -527,16 +543,16 @@ mod nfa2dfa {
                     vec![
                         Transition {
                             condition: TransitionCondition::None,
-                            to: State(1),
+                            to: 1,
                         },
                         Transition {
                             condition: TransitionCondition::None,
-                            to: State(3),
+                            to: 3,
                         },
                     ],
                     vec![Transition {
                         condition: TransitionCondition::None,
-                        to: State(2),
+                        to: 2,
                     }],
                     vec![],
                     vec![],
@@ -551,8 +567,8 @@ mod nfa2dfa {
         fn test_disjoint_transitions() {
             // -----
             //    -----
-            let input = vec![((0, 5), State(0)), ((3, 10), State(1))];
-            let expected: Vec<((u32, u32), BTreeSet<State>)> = vec![
+            let input = vec![((0, 5), 0), ((3, 10), 1)];
+            let expected: Vec<((u32, u32), BTreeSet<usize>)> = vec![
                 ((0, 2), set([0])),
                 ((3, 5), set([0, 1])),
                 ((6, 10), set([1])),
@@ -562,16 +578,16 @@ mod nfa2dfa {
 
             // -----
             //     .
-            let input = vec![((0, 5), State(0)), ((5, 5), State(1))];
-            let expected: Vec<((u32, u32), BTreeSet<State>)> =
+            let input = vec![((0, 5), 0), ((5, 5), 1)];
+            let expected: Vec<((u32, u32), BTreeSet<usize>)> =
                 vec![((0, 4), set([0])), ((5, 5), set([0, 1]))];
             let actual = super::disjoint_transitions(&input);
             assert_eq!(expected, actual);
 
             // -----
             //   .
-            let input = vec![((0, 5), State(0)), ((3, 3), State(1))];
-            let expected: Vec<((u32, u32), BTreeSet<State>)> = vec![
+            let input = vec![((0, 5), 0), ((3, 3), 1)];
+            let expected: Vec<((u32, u32), BTreeSet<usize>)> = vec![
                 ((0, 2), set([0])),
                 ((3, 3), set([0, 1])),
                 ((4, 5), set([0])),
@@ -581,8 +597,8 @@ mod nfa2dfa {
 
             // ---
             //    ---
-            let input = vec![((0, 5), State(0)), ((5, 10), State(1))];
-            let expected: Vec<((u32, u32), BTreeSet<State>)> = vec![
+            let input = vec![((0, 5), 0), ((5, 10), 1)];
+            let expected: Vec<((u32, u32), BTreeSet<usize>)> = vec![
                 ((0, 4), set([0])),
                 ((5, 5), set([0, 1])),
                 ((6, 10), set([1])),
@@ -592,16 +608,16 @@ mod nfa2dfa {
 
             // ------
             // ---
-            let input = vec![((0, 5), State(0)), ((0, 2), State(1))];
-            let expected: Vec<((u32, u32), BTreeSet<State>)> =
+            let input = vec![((0, 5), 0), ((0, 2), 1)];
+            let expected: Vec<((u32, u32), BTreeSet<usize>)> =
                 vec![((0, 2), set([0, 1])), ((3, 5), set([0]))];
             let actual = super::disjoint_transitions(&input);
             assert_eq!(expected, actual);
 
             // ------  ------
             //    ---
-            let input = vec![((0, 5), State(0)), ((3, 5), State(1)), ((7, 10), State(2))];
-            let expected: Vec<((u32, u32), BTreeSet<State>)> = vec![
+            let input = vec![((0, 5), 0), ((3, 5), 1), ((7, 10), 2)];
+            let expected: Vec<((u32, u32), BTreeSet<usize>)> = vec![
                 ((0, 2), set([0])),
                 ((3, 5), set([0, 1])),
                 ((7, 10), set([2])),
@@ -611,8 +627,8 @@ mod nfa2dfa {
 
             // ------  ------
             //     ------
-            let input = vec![((0, 5), State(0)), ((3, 7), State(1)), ((6, 10), State(2))];
-            let expected: Vec<((u32, u32), BTreeSet<State>)> = vec![
+            let input = vec![((0, 5), 0), ((3, 7), 1), ((6, 10), 2)];
+            let expected: Vec<((u32, u32), BTreeSet<usize>)> = vec![
                 ((0, 2), set([0])),
                 ((3, 5), set([0, 1])),
                 ((6, 7), set([1, 2])),
