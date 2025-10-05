@@ -71,7 +71,7 @@ impl<I: Iterator<Item = char>> Parser<I> {
         while let Some(sub) = self.parse_alternation()? {
             // Parse next construct and embed fragment
             let (sub_start, sub_accept) = fsa.embed(sub);
-            for &state in &fsa.accepting_states().clone() {
+            for &state in &fsa.accepting_states() {
                 fsa.link(state, sub_start, TransitionCondition::None);
             }
             fsa.clear_accepting();
@@ -116,7 +116,7 @@ impl<I: Iterator<Item = char>> Parser<I> {
         };
         while let Some(next) = self.parse_quantified_atom()? {
             let (next_start, next_accept) = fsa.embed(next);
-            for state in fsa.accepting_states().clone() {
+            for state in fsa.accepting_states() {
                 fsa.link(state, next_start, TransitionCondition::None);
             }
             fsa.clear_accepting();
@@ -142,7 +142,7 @@ impl<I: Iterator<Item = char>> Parser<I> {
             Some('*') => {
                 self.pattern.next().unwrap();
                 // Edge from end to start to allow repetition
-                for state in atom.accepting_states().clone() {
+                for state in atom.accepting_states() {
                     atom.link(state, atom.start(), TransitionCondition::None);
                 }
                 // Accept start state to allow empty string
@@ -151,7 +151,7 @@ impl<I: Iterator<Item = char>> Parser<I> {
             Some('+') => {
                 self.pattern.next().unwrap();
                 // Edge from end to start to allow repetition
-                for state in atom.accepting_states().clone() {
+                for state in atom.accepting_states() {
                     atom.link(state, atom.start(), TransitionCondition::None);
                 }
             }

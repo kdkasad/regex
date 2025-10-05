@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, fmt::Write as _, ops::RangeInclusive};
+use std::{fmt::Write as _, ops::RangeInclusive};
 
 /// Newtype wrapper around a state index
 ///
@@ -28,9 +28,6 @@ pub struct StateMachine {
     adj_list: Vec<Vec<Transition>>,
     /// `is_accepting[i]` is `true` iff state `i` is an accepting state
     is_accepting: Vec<bool>, // TODO: replace with bit vector
-    /// The set of accepting states, i.e. the set `U` such that `i` in `U` iff `is_accepting[i]` is
-    /// `true`.
-    accepting: BTreeSet<State>,
 }
 
 impl Default for StateMachine {
@@ -38,7 +35,6 @@ impl Default for StateMachine {
         StateMachine {
             adj_list: vec![Vec::new()],
             is_accepting: vec![false],
-            accepting: BTreeSet::new(),
         }
     }
 }
@@ -53,10 +49,17 @@ impl StateMachine {
     }
 
     /// Returns the set of accepting states.
+    ///
+    /// This is a slow operation, as it requires iterating over all states.
     #[must_use]
-    #[inline]
-    pub const fn accepting_states(&self) -> &BTreeSet<State> {
-        &self.accepting
+    pub fn accepting_states(&self) -> Vec<State> {
+        self.is_accepting
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|&(_, accepting)| accepting)
+            .map(|(i, _)| State(i))
+            .collect()
     }
 
     #[must_use]
@@ -68,24 +71,16 @@ impl StateMachine {
     /// Marks `state` as either accepting or non-accepting, as determined by `accept`.
     #[inline]
     pub fn set_accepting(&mut self, state: State, accept: bool) {
-        let old = self.is_accepting[state.0];
-        if old != accept {
-            self.is_accepting[state.0] = accept;
-            if accept {
-                self.accepting.insert(state);
-            } else {
-                self.accepting.remove(&state);
-            }
-        }
+        self.is_accepting[state.0] = accept;
     }
 
     /// Clears all accepting states.
+    ///
+    /// This is a slow operation; prefer calling [`set_accepting(false)`] if you
+    /// know the accepting states.
+    #[inline]
     pub fn clear_accepting(&mut self) {
-        // Clear only the states we know are marked as accepting
-        for &State(i) in &self.accepting {
-            self.is_accepting[i] = false;
-        }
-        self.accepting.clear();
+        self.is_accepting.fill(false);
     }
 
     /// Returns the starting state.
@@ -114,7 +109,7 @@ impl StateMachine {
     /// Embeds a given [`StateMachine`] into this state machine by copying all of its
     /// states and transitions, adjusting indices accordingly. Returns a tuple containing the
     /// states corresponding to the fragment's starting and accepting states, respectively.
-    pub fn embed(&mut self, mut sub: StateMachine) -> (State, BTreeSet<State>) {
+    pub fn embed(&mut self, mut sub: StateMachine) -> (State, Vec<State>) {
         let n = self.adj_list.len();
         for mut edge_list in std::mem::take(&mut sub.adj_list) {
             for transition in &mut edge_list {
@@ -124,11 +119,10 @@ impl StateMachine {
             self.is_accepting.push(false);
         }
         let start = State(sub.start().0 + n);
-        let accept_set = sub
-            .accepting_states()
-            .iter()
-            .map(|state| State(state.0 + n))
-            .collect();
+        let mut accept_set = sub.accepting_states();
+        for state in &mut accept_set {
+            state.0 += n;
+        }
         (start, accept_set)
     }
 
@@ -357,7 +351,6 @@ mod nfa2dfa {
             for (set, state) in &set_to_state {
                 if set.iter().any(|&nfa_state| nfa.is_accepting[nfa_state.0]) {
                     dfa.is_accepting[state.0] = true;
-                    dfa.accepting.insert(*state);
                 }
             }
 
@@ -521,7 +514,6 @@ mod nfa2dfa {
                     }],
                     vec![],
                 ],
-                accepting: set([1]),
                 is_accepting: vec![false, true],
             };
             let actual = epsilon_closure(&fsa, &set([0]));
@@ -549,7 +541,6 @@ mod nfa2dfa {
                     vec![],
                     vec![],
                 ],
-                accepting: set([2]),
                 is_accepting: vec![false, false, true],
             };
             let actual = epsilon_closure(&fsa, &set([0]));
