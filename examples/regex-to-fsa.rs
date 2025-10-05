@@ -7,13 +7,13 @@ fn main() -> ExitCode {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
     let Some(pattern) = std::env::args().nth(1) else {
-        println!("Usage: {} <pattern>", std::env::args().nth(0).unwrap());
+        println!("Usage: {} <pattern>", std::env::args().next().unwrap());
         return ExitCode::FAILURE;
     };
     let regex = match Regex::new(&pattern) {
         Ok(v) => v,
         Err(err) => {
-            eprintln!("Error parsing regex: {}", err);
+            eprintln!("Error parsing regex: {err}");
             return ExitCode::FAILURE;
         }
     };

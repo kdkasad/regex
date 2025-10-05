@@ -1,6 +1,6 @@
 //! Parses regular expressions into NFAs
 
-use std::{error::Error, fmt::Display, iter::Peekable, u32};
+use std::{error::Error, fmt::Display, iter::Peekable};
 
 use crate::{
     Regex,
@@ -134,7 +134,6 @@ impl<I: Iterator<Item = char>> Parser<I> {
         };
 
         match self.pattern.peek() {
-            None => (),
             Some('?') => {
                 self.pattern.next().unwrap();
                 atom.set_accepting(atom.start(), true);
@@ -163,6 +162,7 @@ impl<I: Iterator<Item = char>> Parser<I> {
 
     /// Parses the `Atom` non-terminal in the grammar.
     fn parse_atom(&mut self) -> OptionalParseResult {
+        #[expect(clippy::match_same_arms)]
         let c = match self.pattern.peek() {
             // End of input
             None => return Ok(None),
@@ -197,13 +197,13 @@ impl<I: Iterator<Item = char>> Parser<I> {
     fn parse_group(&mut self) -> OptionalParseResult {
         if self.pattern.peek().copied() != Some('(') {
             return Ok(None);
-        };
+        }
         self.pattern.next(); // consume '('
         let fsa = self.parse_pattern()?;
         let found = self.pattern.next();
         if found != Some(')') {
             return Err(PatternParseError::ExpectedButFound(Some(')'), found));
-        };
+        }
         Ok(Some(fsa))
     }
 

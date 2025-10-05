@@ -31,9 +31,8 @@ impl Regex {
     #[must_use]
     pub fn matches(&self, input: &str) -> bool {
         let fsa = self.dfa.as_fsa();
-        let mut chars = input.chars();
         let mut cur_state = fsa.start();
-        while let Some(c) = chars.next() {
+        for c in input.chars() {
             match self.dfa.advance(cur_state, c) {
                 Some(next_state) => cur_state = next_state,
                 None => return false,

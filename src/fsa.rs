@@ -137,7 +137,7 @@ impl StateMachine {
         let mut s = String::new();
         s.push_str("strict digraph FSA {\n");
         if let Some(title) = title.into() {
-            writeln!(&mut s, "label=\"{}\"", title).unwrap();
+            writeln!(&mut s, "label=\"{title}\"").unwrap();
         }
         s.push_str("graph[rankdir=LR]\n");
         s.push_str("node[shape=circle]\n");
