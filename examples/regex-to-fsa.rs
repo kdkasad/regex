@@ -17,7 +17,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let gv = regex.as_fsa().as_fsa().visualize(None);
+    let gv = regex.as_fsa().as_fsa().visualize(pattern.as_str());
     println!("{gv}");
 
     ExitCode::SUCCESS
