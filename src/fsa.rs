@@ -1,24 +1,21 @@
 use std::{fmt::Write as _, ops::RangeInclusive};
 
+#[derive(Debug, Clone, Default)]
+struct State {
+    transitions: Vec<Transition>,
+    is_accepting: bool,
+}
+
 /// Finite state automaton
-///
-/// # Internal representation
-///
-/// The state graph is represented using an adjacency list. `adj_list[i]` is a list of possible
-/// [transitions][Transition] from state `i` to other states.
 #[derive(Debug, Clone)]
 pub struct StateMachine {
-    /// Adjacency list of state graph
-    adj_list: Vec<Vec<Transition>>,
-    /// `is_accepting[i]` is `true` iff state `i` is an accepting state
-    is_accepting: Vec<bool>, // TODO: replace with bit vector
+    states: Vec<State>,
 }
 
 impl Default for StateMachine {
     fn default() -> StateMachine {
         StateMachine {
-            adj_list: vec![Vec::new()],
-            is_accepting: vec![false],
+            states: vec![State::default()],
         }
     }
 }
@@ -37,11 +34,10 @@ impl StateMachine {
     /// This is a slow operation, as it requires iterating over all states.
     #[must_use]
     pub fn accepting_states(&self) -> Vec<usize> {
-        self.is_accepting
+        self.states
             .iter()
-            .copied()
             .enumerate()
-            .filter(|&(_, accepting)| accepting)
+            .filter(|&(_, state)| state.is_accepting)
             .map(|(i, _)| i)
             .collect()
     }
@@ -54,8 +50,8 @@ impl StateMachine {
     #[must_use]
     #[inline]
     pub fn is_accepting(&self, state: usize) -> bool {
-        assert!(state < self.is_accepting.len(), "state is out of bounds");
-        self.is_accepting[state]
+        assert!(state < self.states.len(), "state is out of bounds");
+        self.states[state].is_accepting
     }
 
     /// Marks `state` as either accepting or non-accepting, as determined by `accept`.
@@ -65,8 +61,8 @@ impl StateMachine {
     /// Panics if `state` is out of bounds.
     #[inline]
     pub fn set_accepting(&mut self, state: usize, accept: bool) {
-        assert!(state < self.is_accepting.len(), "state is out of bounds");
-        self.is_accepting[state] = accept;
+        assert!(state < self.states.len(), "state is out of bounds");
+        self.states[state].is_accepting = accept;
     }
 
     /// Clears all accepting states.
@@ -75,7 +71,9 @@ impl StateMachine {
     /// know the accepting states.
     #[inline]
     pub fn clear_accepting(&mut self) {
-        self.is_accepting.fill(false);
+        for state in &mut self.states {
+            state.is_accepting = false;
+        }
     }
 
     /// Returns the starting state.
@@ -89,10 +87,8 @@ impl StateMachine {
     /// Returns the index of the new state.
     #[inline]
     pub fn add_state(&mut self) -> usize {
-        let new = self.adj_list.len();
-        self.adj_list.push(Vec::new());
-        self.is_accepting.push(false);
-        new
+        self.states.push(State::default());
+        self.states.len() - 1
     }
 
     /// Links the given states by creating a [`Transition`] between them.
@@ -102,27 +98,29 @@ impl StateMachine {
     /// Panics if either `from` or `to` is out of bounds.
     #[inline]
     pub fn link(&mut self, from: usize, to: usize, condition: TransitionCondition) {
-        assert!(from < self.adj_list.len(), "from index is out of bounds");
-        assert!(to < self.adj_list.len(), "to index is out of bounds");
-        self.adj_list[from].push(Transition { condition, to });
+        assert!(from < self.states.len(), "from index is out of bounds");
+        assert!(to < self.states.len(), "to index is out of bounds");
+        self.states[from]
+            .transitions
+            .push(Transition { condition, to });
     }
 
     /// Embeds a given [`StateMachine`] into this state machine by copying all of its
     /// states and transitions, adjusting indices accordingly. Returns a tuple containing the
     /// states corresponding to the fragment's starting and accepting states, respectively.
-    pub fn embed(&mut self, mut sub: StateMachine) -> (usize, Vec<usize>) {
-        let n = self.adj_list.len();
-        for mut edge_list in std::mem::take(&mut sub.adj_list) {
-            for transition in &mut edge_list {
+    pub fn embed(&mut self, sub: StateMachine) -> (usize, Vec<usize>) {
+        let n = self.states.len();
+        let mut accept_set = Vec::new();
+        let start = sub.start() + n;
+        for mut state in sub.states {
+            for transition in &mut state.transitions {
                 transition.to += n;
             }
-            self.adj_list.push(edge_list);
-            self.is_accepting.push(false);
-        }
-        let start = sub.start() + n;
-        let mut accept_set = sub.accepting_states();
-        for state in &mut accept_set {
-            *state += n;
+            if state.is_accepting {
+                accept_set.push(self.states.len());
+                state.is_accepting = false;
+            }
+            self.states.push(state);
         }
         (start, accept_set)
     }
@@ -143,16 +141,16 @@ impl StateMachine {
         s.push_str("graph[rankdir=LR]\n");
         s.push_str("node[shape=circle]\n");
         s.push_str("start_state [shape=point; style=invis]\n");
-        for i in 0..self.adj_list.len() {
+        for (i, state) in self.states.iter().enumerate() {
             write!(&mut s, "s{i}").unwrap();
-            if self.is_accepting[i] {
+            if state.is_accepting {
                 s.push_str(" [shape=doublecircle]");
             }
             s.push('\n');
         }
         writeln!(&mut s, "start_state -> s{}", self.start()).unwrap();
-        for (src, transitions) in self.adj_list.iter().enumerate() {
-            for transition in transitions {
+        for (src, state) in self.states.iter().enumerate() {
+            for transition in &state.transitions {
                 write!(&mut s, "s{} -> s{} [label=\"", src, transition.to).unwrap();
                 Self::write_graphviz_label(&mut s, &transition.condition);
                 writeln!(&mut s, "\"]").unwrap();
@@ -244,10 +242,10 @@ impl Dfa {
     #[must_use]
     pub fn advance(&self, cur_state: usize, input: char) -> Option<usize> {
         assert!(
-            cur_state < self.0.adj_list.len(),
+            cur_state < self.0.states.len(),
             "cur_state is out of bounds"
         );
-        let outgoing_edges = &self.0.adj_list[cur_state];
+        let outgoing_edges = &self.0.states[cur_state].transitions;
         for edge in outgoing_edges {
             match edge.condition {
                 TransitionCondition::InRange(start, end) => {
@@ -311,7 +309,7 @@ mod nfa2dfa {
                 let outgoing: Vec<((u32, u32), usize)> = set
                     .iter()
                     .copied()
-                    .flat_map(|state| nfa.adj_list[state].iter())
+                    .flat_map(|state| nfa.states[state].transitions.iter())
                     .filter_map(|transition| {
                         if let TransitionCondition::InRange(start, end) = transition.condition {
                             Some(((start, end), transition.to))
@@ -345,7 +343,7 @@ mod nfa2dfa {
                     trace!("found {dst_set:?} -> {dst}");
 
                     // Create a transition from src to dst in the DFA
-                    dfa.adj_list[src].push(Transition {
+                    dfa.states[src].transitions.push(Transition {
                         condition: TransitionCondition::InRange(range.0, range.1),
                         to: dst,
                     });
@@ -361,8 +359,11 @@ mod nfa2dfa {
 
             // Mark NFA state sets which contain accepting states as accepting in the DFA
             for (set, &state) in &set_to_state {
-                if set.iter().any(|&nfa_state| nfa.is_accepting[nfa_state]) {
-                    dfa.is_accepting[state] = true;
+                if set
+                    .iter()
+                    .any(|&nfa_state| nfa.states[nfa_state].is_accepting)
+                {
+                    dfa.states[state].is_accepting = true;
                 }
             }
 
@@ -384,7 +385,7 @@ mod nfa2dfa {
             stack.push(*s);
         }
         while let Some(s) = stack.pop() {
-            let transitions_from_s = &nfa.adj_list[s];
+            let transitions_from_s = &nfa.states[s].transitions;
             for t in transitions_from_s {
                 if let TransitionCondition::None = t.condition {
                     let next = t.to;
@@ -504,7 +505,7 @@ mod nfa2dfa {
         use std::collections::BTreeSet;
 
         use super::epsilon_closure;
-        use crate::fsa::{StateMachine, Transition, TransitionCondition};
+        use crate::fsa::{State, StateMachine, Transition, TransitionCondition};
 
         fn set<I>(it: I) -> BTreeSet<usize>
         where
@@ -523,14 +524,19 @@ mod nfa2dfa {
         #[test]
         fn test_epsilon_closure_single_jump() {
             let fsa = StateMachine {
-                adj_list: vec![
-                    vec![Transition {
-                        condition: TransitionCondition::None,
-                        to: 1,
-                    }],
-                    vec![],
+                states: vec![
+                    State {
+                        is_accepting: false,
+                        transitions: vec![Transition {
+                            condition: TransitionCondition::None,
+                            to: 1,
+                        }],
+                    },
+                    State {
+                        is_accepting: true,
+                        transitions: vec![],
+                    },
                 ],
-                is_accepting: vec![false, true],
             };
             let actual = epsilon_closure(&fsa, &set([0]));
             assert_eq!(set([0, 1]), actual);
@@ -539,25 +545,36 @@ mod nfa2dfa {
         #[test]
         fn test_epsilon_closure_several_jumps() {
             let fsa = StateMachine {
-                adj_list: vec![
-                    vec![
-                        Transition {
+                states: vec![
+                    State {
+                        is_accepting: false,
+                        transitions: vec![
+                            Transition {
+                                condition: TransitionCondition::None,
+                                to: 1,
+                            },
+                            Transition {
+                                condition: TransitionCondition::None,
+                                to: 3,
+                            },
+                        ],
+                    },
+                    State {
+                        is_accepting: false,
+                        transitions: vec![Transition {
                             condition: TransitionCondition::None,
-                            to: 1,
-                        },
-                        Transition {
-                            condition: TransitionCondition::None,
-                            to: 3,
-                        },
-                    ],
-                    vec![Transition {
-                        condition: TransitionCondition::None,
-                        to: 2,
-                    }],
-                    vec![],
-                    vec![],
+                            to: 2,
+                        }],
+                    },
+                    State {
+                        is_accepting: true,
+                        transitions: vec![],
+                    },
+                    State {
+                        is_accepting: true,
+                        transitions: vec![],
+                    },
                 ],
-                is_accepting: vec![false, false, true],
             };
             let actual = epsilon_closure(&fsa, &set([0]));
             assert_eq!(set([0, 1, 2, 3]), actual);
