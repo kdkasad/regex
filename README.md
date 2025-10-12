@@ -16,7 +16,7 @@ And the following are goals I have for my implementation:
 
 - [x] Write everything by hand and from scratch
 - [x] Handle Unicode, not just ASCII[^unicode]
-- [ ] Handle the following regex operators:
+- [x] Handle the following regex operators:
     - [x] `()` - grouping
     - [x] `[]` - character sets
     - [x] `|` - alternation
